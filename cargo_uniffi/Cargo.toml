@@ -1,0 +1,22 @@
+[package]
+name = "cargo-uniffi"
+version = "0.4.0"
+authors = ["Firefox Sync Team <sync-team@mozilla.com>"]
+description = "a multi-language bindings generator for rust (cargo subcommand)"
+documentation = "https://mozilla.github.io/uniffi-rs"
+homepage = "https://mozilla.github.io/uniffi-rs"
+repository = "https://github.com/mozilla/uniffi-rs"
+license = "MPL-2.0"
+edition = "2018"
+keywords = ["ffi", "bindgen"]
+
+[[bin]]
+name = "cargo-uniffi"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+askama = "0.10"
+cargo_metadata = "0.12"
+clap = "2"
+uniffi_bindgen = { path = "../uniffi_bindgen", version = "0.4.0" }

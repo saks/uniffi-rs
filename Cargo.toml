@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "cargo_uniffi",
   "uniffi_bindgen",
   "uniffi_build",
   "uniffi_macros",
