@@ -108,14 +108,18 @@ class RustBufferStream
 
   {% when Type::Timestamp -%}
   # The Timestamp type.
-  ONE_SECOND_IN_NANOSECONDS = 10**9
+  READ_ONE_SECOND_IN_NANOSECONDS = 10**9
 
   def read{{ canonical_type_name }}
     seconds = unpack_from 8, 'q>'
     nanoseconds = unpack_from 4, 'L>'
 
     if seconds < 0
-      nanoseconds = ONE_SECOND_IN_NANOSECONDS - nanoseconds
+      # In order to get duration nsec we shift by 1 second:
+      nanoseconds = READ_ONE_SECOND_IN_NANOSECONDS - nanoseconds
+
+      # Then we compensate 1 second shift:
+      seconds -= 1
     end
 
     Time.at(seconds, nanoseconds, :nanosecond, in: '+00:00').utc

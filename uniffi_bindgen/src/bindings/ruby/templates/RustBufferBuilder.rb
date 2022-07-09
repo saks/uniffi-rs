@@ -107,14 +107,18 @@ class RustBufferBuilder
 
   {% when Type::Timestamp -%}
   # The Timestamp type.
-  ONE_SECOND_IN_NANOSECONDS = 10**9
+  WRITE_ONE_SECOND_IN_NANOSECONDS = 10**9
 
   def write_{{ canonical_type_name }}(v)
     seconds = v.tv_sec
     nanoseconds = v.tv_nsec
 
     if seconds < 0
-      nanoseconds = ONE_SECOND_IN_NANOSECONDS - nanoseconds
+      # In order to get duration nsec we shift by 1 second:
+      nanoseconds = WRITE_ONE_SECOND_IN_NANOSECONDS - nanoseconds
+
+      # Then we compensate 1 second shift:
+      seconds += 1
     end
 
     pack_into 8, 'q>', seconds
