@@ -8,6 +8,7 @@ use askama::Template;
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
 use crate::interface::*;
 
@@ -76,6 +77,17 @@ pub fn canonical_name(t: &Type) -> String {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomTypeConfig {
+    imports: Option<Vec<String>>,
+    type_name: Option<String>,
+    into_custom: String, // b/w compat alias for lift
+    lift: String,
+    from_custom: String, // b/w compat alias for lower
+    lower: String,
+}
+
 // Some config options for it the caller wants to customize the generated ruby.
 // Note that this can only be used to control details of the ruby *that do not affect the underlying component*,
 // since the details of the underlying component are entirely determined by the `ComponentInterface`.
@@ -83,6 +95,8 @@ pub fn canonical_name(t: &Type) -> String {
 pub struct Config {
     pub(super) cdylib_name: Option<String>,
     cdylib_path: Option<String>,
+    #[serde(default)]
+    custom_types: HashMap<String, CustomTypeConfig>,
 }
 
 impl Config {
