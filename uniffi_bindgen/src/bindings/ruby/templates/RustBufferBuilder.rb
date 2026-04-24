@@ -180,7 +180,7 @@ class RustBufferBuilder
     if v.{{ variant.name()|var_name_rb }}?
       pack_into(4, 'l>', {{ loop.index }})
       {%- for field in variant.fields() %}
-      self.write_{{ self::canonical_name(field.as_type().borrow()).borrow()|class_name_rb }}(v.{{ field.name() }})
+        self.write_{{ self::canonical_name(field.as_type().borrow()).borrow()|class_name_rb }}(v.{% call rb::field_name(field, loop.index) %}{% endcall %})
       {%- endfor %}
     end
     {%- endfor %}
@@ -232,6 +232,26 @@ class RustBufferBuilder
       self.write_{{ self::canonical_name(inner_type).borrow()|class_name_rb }}(v)
     end
   end
+
+  {% when Type::Custom { name, builtin, .. } -%}
+  {%- match config.custom_types.get(name.as_str()) %}
+  {%- when Some(cfg) %}{%- if cfg.has_conversion() %}
+  # Custom type {{ name }}: applies lower, then writes builtin `{{ self::canonical_name(builtin) }}`
+  def write_{{ canonical_type_name }}(v)
+    write_{{ self::canonical_name(builtin).borrow()|class_name_rb }}({{ cfg.lower("v") }})
+  end
+  {%- else %}
+  # The Custom type {{ name }} delegates serialization to its builtin type.
+  def write_{{ canonical_type_name }}(v)
+    write_{{ self::canonical_name(builtin).borrow()|class_name_rb }}(v)
+  end
+  {%- endif %}
+  {%- when None %}
+  # The Custom type {{ name }} delegates serialization to its builtin type.
+  def write_{{ canonical_type_name }}(v)
+    write_{{ self::canonical_name(builtin).borrow()|class_name_rb }}(v)
+  end
+  {%- endmatch %}
 
   {%- else -%}
   # This type is not yet supported in the Ruby backend.

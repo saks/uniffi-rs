@@ -289,6 +289,28 @@ class RustBufferStream
 
     items
   end
+
+  {% when Type::Custom { name, builtin, .. } -%}
+  {%- match config.custom_types.get(name.as_str()) %}
+  {%- when Some(cfg) %}{%- if cfg.has_conversion() %}
+  # Custom type {{ name }}: reads builtin `{{ self::canonical_name(builtin) }}`, then applies lift.
+  def read{{ canonical_type_name }}
+    raw = read{{ self::canonical_name(builtin).borrow()|class_name_rb }}
+    {{ cfg.lift("raw") }}
+  end
+  {%- else %}
+  # The Custom type {{ name }} delegates deserialization to its builtin type.
+  def read{{ canonical_type_name }}
+    read{{ self::canonical_name(builtin).borrow()|class_name_rb }}
+  end
+  {%- endif %}
+  {%- when None %}
+  # The Custom type {{ name }} delegates deserialization to its builtin type.
+  def read{{ canonical_type_name }}
+    read{{ self::canonical_name(builtin).borrow()|class_name_rb }}
+  end
+  {%- endmatch %}
+
   {%- else -%}
   # This type is not yet supported in the Ruby backend.
   def read{{ canonical_type_name }}

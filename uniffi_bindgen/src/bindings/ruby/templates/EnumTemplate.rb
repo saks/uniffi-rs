@@ -17,19 +17,19 @@ class {{ e.name()|class_name_rb }}
   {% for variant in e.variants() -%}
   class {{ variant.name()|enum_name_rb }}
     {% if variant.has_fields() %}
-    attr_reader {% for field in variant.fields() %}:{{ field.name()|var_name_rb }}{% if loop.last %}{% else %}, {% endif %}{%- endfor %}
+         attr_reader {% for field in variant.fields() %}:{% call rb::field_name(field, loop.index) %}{% endcall %}{% if loop.last %}{% else %}, {% endif %}{%- endfor %}
     {% endif %}
-    def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb }}{% if loop.last %}{% else %}, {% endif %}{% endfor %})
+    def initialize({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}{% if loop.last %}{% else %}, {% endif %}{% endfor %})
       {% if variant.has_fields() %}
       {%- for field in variant.fields() %}
-      @{{ field.name()|var_name_rb }} = {{ field.name()|var_name_rb }}
+        @{% call rb::field_name(field, loop.index) %}{% endcall %} = {% call rb::field_name(field, loop.index) %}{% endcall %}
       {%- endfor %}
       {% else %}
       {% endif %}
     end
 
     def to_s
-      "{{ e.name()|class_name_rb }}::{{ variant.name()|enum_name_rb }}({% for field in variant.fields() %}{{ field.name() }}=#{@{{ field.name() }}}{% if loop.last %}{% else %}, {% endif %}{% endfor %})"
+      "{{ e.name()|class_name_rb }}::{{ variant.name()|enum_name_rb }}"
     end
 
     def ==(other)
@@ -37,7 +37,7 @@ class {{ e.name()|class_name_rb }}
         return false
       end
       {%- for field in variant.fields() %}
-      if @{{ field.name()|var_name_rb }} != other.{{ field.name()|var_name_rb }}
+        if @{% call rb::field_name(field, loop.index) %}{% endcall %} != other.{% call rb::field_name(field, loop.index) %}{% endcall %}
         return false
       end
       {%- endfor %}

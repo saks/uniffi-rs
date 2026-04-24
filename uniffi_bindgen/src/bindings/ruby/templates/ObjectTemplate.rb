@@ -69,7 +69,7 @@ class {{ obj.name()|class_name_rb }}
   def {{ meth.name()|fn_name_rb }}({% call rb::arg_list_decl(meth) %}{% endcall %})
     {%- call rb::setup_args_extra_indent(meth) %}{% endcall %}
     result = {% call rb::to_ffi_call_with_prefix("uniffi_clone_handle()", meth) %}{% endcall %}
-    return {{ "result"|lift_rb(return_type) }}
+    return {{ "result"|lift_rb(return_type, config) }}
   end
 
   {%- when None -%}

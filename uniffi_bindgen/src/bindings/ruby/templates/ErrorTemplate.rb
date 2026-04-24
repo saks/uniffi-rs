@@ -30,19 +30,19 @@ class {{ e.name()|class_name_rb }}
 module {{ e.name()|class_name_rb }}
   {%- for variant in e.variants() %}
   class {{ variant.name()|class_name_rb }} < StandardError
-    def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb }}{% if !loop.last %}, {% endif %}{% endfor %})
+    def initialize({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}{% if !loop.last %}, {% endif %}{% endfor %})
         {%- for field in variant.fields() %}
-        @{{ field.name()|var_name_rb }} = {{ field.name()|var_name_rb }}
+        @{% call rb::field_name(field, loop.index) %}{% endcall %} = {% call rb::field_name(field, loop.index) %}{% endcall %}
         {%- endfor %}
         super()
       end
     {%- if variant.has_fields() %}
 
-    attr_reader {% for field in variant.fields() %}:{{ field.name()|var_name_rb }}{% if !loop.last %}, {% endif %}{% endfor %}
+    attr_reader {% for field in variant.fields() %}:{% call rb::field_name(field, loop.index) %}{% endcall %}{% if !loop.last %}, {% endif %}{% endfor %}
     {% endif %}
 
     def to_s
-     "#{self.class.name}({% for field in variant.fields() %}{{ field.name()|var_name_rb }}=#{@{{ field.name()|var_name_rb }}.inspect}{% if !loop.last %}, {% endif %}{% endfor %})"
+     "#{self.class.name}({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}=#{@{% call rb::field_name(field, loop.index) %}{% endcall %}.inspect}{% if !loop.last %}, {% endif %}{% endfor %})"
     end
   end
   {%- endfor %}

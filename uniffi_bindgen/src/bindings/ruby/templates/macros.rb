@@ -4,6 +4,19 @@
 // passed to rust via `_arg_list_ffi_call` (we use  `var_name_rb` in `lower_rb`)
 #}
 
+{#
+// Returns the Ruby name for an enum variant field.
+// For tuple-style fields (empty name is uniffi metadata) we generate a 
+// positional name like v1, v2, ... using the 1-based loop index.
+#}
+{%- macro field_name(field, field_num) -%}
+{%- if field.name().is_empty() -%}
+v{{- field_num -}}
+{%- else -%}
+{{ field.name()|var_name_rb }}
+{%- endif -%}
+{%- endmacro -%}
+  
 {%- macro to_ffi_call(func) -%}
     {%- match func.throws_name() -%}
     {%- when Some with (e) -%}
@@ -31,7 +44,7 @@
 
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
-        {{- arg.name()|lower_rb(arg.as_type().borrow()) }}
+        {{- arg.name()|lower_rb(arg.as_type().borrow(), config) }}
         {%- if !loop.last %},{% endif %}
     {%- endfor %}
 {%- endmacro -%}
@@ -62,14 +75,14 @@
 
 {%- macro setup_args(func) %}
     {%- for arg in func.arguments() %}
-    {{ arg.name() }} = {{ arg.name()|coerce_rb(ci.namespace()|class_name_rb, arg.as_type().borrow()) }}
-    {{ arg.name()|check_lower_rb(arg.as_type().borrow()) }}
+    {{ arg.name() }} = {{ arg.name()|coerce_rb(ci.namespace()|class_name_rb, arg.as_type().borrow(), config) }}
+    {{ arg.name()|check_lower_rb(arg.as_type().borrow(), config) }}
     {% endfor -%}
 {%- endmacro -%}
 
 {%- macro setup_args_extra_indent(meth) %}
         {%- for arg in meth.arguments() %}
-        {{ arg.name() }} = {{ arg.name()|coerce_rb(ci.namespace()|class_name_rb, arg.as_type().borrow()) }}
-        {{ arg.name()|check_lower_rb(arg.as_type().borrow()) }}
+        {{ arg.name() }} = {{ arg.name()|coerce_rb(ci.namespace()|class_name_rb, arg.as_type().borrow(), config) }}
+        {{ arg.name()|check_lower_rb(arg.as_type().borrow(), config) }}
         {%- endfor %}
 {%- endmacro -%}

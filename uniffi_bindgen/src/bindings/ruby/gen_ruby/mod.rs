@@ -80,12 +80,39 @@ pub fn canonical_name(t: &Type) -> String {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CustomTypeConfig {
-    imports: Option<Vec<String>>,
     type_name: Option<String>,
+    imports: Option<Vec<String>>,
     into_custom: String, // b/w compat alias for lift
     lift: String,
     from_custom: String, // b/w compat alias for lower
     lower: String,
+}
+
+impl CustomTypeConfig {
+    /// Produce ruby expression that lifts a raw-builtin value `nm` into the custom type.
+    fn lift(&self, name: &str) -> String {
+        let converter = if self.lift.is_empty() {
+            &self.into_custom
+        } else {
+            &self.lift
+        };
+        converter.replace("{}", name)
+    }
+
+    /// Produce ruby expression that lowers a value `nm` of the custom type into a raw-builtin.
+    fn lower(&self, name: &str) -> String {
+        let converter = if self.lower.is_empty() {
+            &self.from_custom
+        } else {
+            &self.lower
+        };
+        converter.replace("{}", name)
+    }
+
+    /// True if this config actually specifies conversion expressions.
+    pub fn has_conversion(&self) -> bool {
+        !self.lift.is_empty() || !self.into_custom.is_empty()
+    }
 }
 
 // Some config options for it the caller wants to customize the generated ruby.
@@ -244,14 +271,16 @@ mod filters {
         _: &dyn askama::Values,
         ns: S2,
         type_: &Type,
+        config: &Config,
     ) -> Result<String, askama::Error> {
-        coerce_rb_inner(nm, ns, type_)
+        coerce_rb_inner(nm, ns, type_, &config.custom_types)
     }
 
     pub fn coerce_rb_inner<S1: AsRef<str>, S2: AsRef<str>>(
         nm: S1,
         ns: S2,
         type_: &Type,
+        custom_types: &HashMap<String, CustomTypeConfig>,
     ) -> Result<String, askama::Error> {
         let nm = nm.as_ref();
         let ns = ns.as_ref();
@@ -270,14 +299,19 @@ mod filters {
             Type::String => format!("{ns}::uniffi_utf8({nm})"),
             Type::Bytes => format!("{ns}::uniffi_bytes({nm})"),
             Type::Timestamp | Type::Duration => nm.to_string(),
-            Type::CallbackInterface { .. } => {
-                panic!("No support for coercing callback interfaces yet")
+            Type::CallbackInterface { name, .. } => {
+                // Callback interfaces are not yet supported; emit a Ruby runtime error so that
+                // code generation succeeds but calling such functions raises clearly.
+                format!("(raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\")")
             }
             Type::Optional { inner_type: t } => {
-                format!("({nm} ? {} : nil)", coerce_rb_inner(nm, ns, t)?)
+                format!(
+                    "({nm} ? {} : nil)",
+                    coerce_rb_inner(nm, ns, t, custom_types)?
+                )
             }
             Type::Sequence { inner_type: t } => {
-                let coerce_code = coerce_rb_inner("v", ns, t)?;
+                let coerce_code = coerce_rb_inner("v", ns, t, custom_types)?;
                 if coerce_code == "v" {
                     nm.to_string()
                 } else {
@@ -285,8 +319,8 @@ mod filters {
                 }
             }
             Type::Map { value_type: t, .. } => {
-                let k_coerce_code = coerce_rb_inner("k", ns, &Type::String)?;
-                let v_coerce_code = coerce_rb_inner("v", ns, t)?;
+                let k_coerce_code = coerce_rb_inner("k", ns, &Type::String, custom_types)?;
+                let v_coerce_code = coerce_rb_inner("v", ns, t, custom_types)?;
 
                 if k_coerce_code == "k" && v_coerce_code == "v" {
                     nm.to_string()
@@ -296,8 +330,16 @@ mod filters {
                     )
                 }
             }
-            Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type)?,
-            Type::Custom { .. } => panic!("No support for custom types, yet"),
+            Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type, custom_types)?,
+            Type::Custom { name, builtin, .. } => {
+                // For config-backed custom types, the user passes a custom-typed values;
+                // skip builtin coercion (the lower expression handles conversion).
+                if custom_types.contains_key(name.as_str()) {
+                    nm.to_string()
+                } else {
+                    coerce_rb_inner(nm, ns, builtin, custom_types)?
+                }
+            }
         })
     }
 
@@ -306,6 +348,7 @@ mod filters {
         nm: S,
         _: &dyn askama::Values,
         type_: &Type,
+        config: &Config,
     ) -> Result<String, askama::Error> {
         let nm = nm.as_ref();
         Ok(match type_ {
@@ -321,19 +364,57 @@ mod filters {
                 class_name_rb_inner(&canonical_name(type_))?,
                 nm
             ),
+            Type::Custom { name, .. } => {
+                if let Some(cfg) = config.custom_types.get(name) {
+                    if let Some(type_name) = &cfg.type_name {
+                        // Emit: rause TypeError, "Expected URI, got #{nm.class}" unless nm.is_a?(URI)
+                        format!(
+                            "raise TypeError, \"Expected {type_name}, got {{#{nm}.class}}\" unless {nm}.is_a?({type_name})"
+                        )
+                    } else {
+                        "".to_string()
+                    }
+                } else {
+                    "".to_string()
+                }
+            }
             _ => "".to_owned(),
         })
     }
 
-    #[askama::filter_fn]
-    pub fn lower_rb(
+    pub fn lower_rb_inner(
         nm: &str,
-        _: &dyn askama::Values,
-        mut type_: &Type,
+        type_: &Type,
+        custom_types: &HashMap<String, CustomTypeConfig>,
     ) -> Result<String, askama::Error> {
+        let mut type_ = type_;
         while let Type::Box { inner_type } = type_ {
             type_ = &**inner_type;
         }
+        lower_rb_inner_no_box(nm, type_, custom_types)
+    }
+
+    fn lower_rb_inner_no_box(
+        nm: &str,
+        type_: &Type,
+        custom_types: &HashMap<String, CustomTypeConfig>,
+    ) -> Result<String, askama::Error> {
+        Ok(match type_ {
+            Type::Box { inner_type } => lower_rb_inner(nm, inner_type, custom_types)?,
+            Type::Custom { name, builtin, .. } => {
+                if let Some(cfg) = custom_types.get(name.as_str()) {
+                    // Apply the configured `lower` expression, then lower the resulting builtin.
+                    let lowered_nm = cfg.lower(nm);
+                    lower_rb_inner(&lowered_nm, builtin, custom_types)?
+                } else {
+                    lower_rb_inner(nm, builtin, custom_types)?
+                }
+            }
+            type_ => return lower_rb_inner_dispatch(nm, type_),
+        })
+    }
+
+    pub fn lower_rb_inner_dispatch(nm: &str, type_: &Type) -> Result<String, askama::Error> {
         Ok(match type_ {
             Type::Int8
             | Type::UInt8
@@ -351,8 +432,10 @@ mod filters {
             Type::Object { name, .. } => {
                 format!("({}.uniffi_lower {nm})", class_name_rb_inner(name)?)
             }
-            Type::CallbackInterface { .. } => {
-                panic!("No support for lowering callback interfaces yet")
+            Type::CallbackInterface { name, .. } => {
+                format!(
+                    "raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\""
+                )
             }
             Type::Enum { .. }
             | Type::Record { .. }
@@ -366,19 +449,57 @@ mod filters {
                 nm
             ),
             Type::Box { .. } => unreachable!(),
-            Type::Custom { .. } => panic!("No support for lowering custom types, yet"),
+            Type::Custom { .. } => unreachable!("Custom types should be handled before dispatch"),
         })
     }
 
     #[askama::filter_fn]
-    pub fn lift_rb(
+    pub fn lower_rb(
         nm: &str,
         _: &dyn askama::Values,
-        mut type_: &Type,
+        type_: &Type,
+        config: &Config,
     ) -> Result<String, askama::Error> {
+        lower_rb_inner(nm, type_, &config.custom_types)
+    }
+
+    fn lift_rb_inner(
+        name: &str,
+        type_: &Type,
+        custom_types: &HashMap<String, CustomTypeConfig>,
+    ) -> Result<String, askama::Error> {
+        let mut type_ = type_;
         while let Type::Box { inner_type } = type_ {
             type_ = &**inner_type;
         }
+        lift_rb_inner_no_box(name, type_, custom_types)
+    }
+
+    fn lift_rb_inner_no_box(
+        name: &str,
+        type_: &Type,
+        custom_types: &HashMap<String, CustomTypeConfig>,
+    ) -> Result<String, askama::Error> {
+        Ok(match type_ {
+            Type::Box { inner_type } => lift_rb_inner(name, inner_type, custom_types)?,
+            Type::Custom { name, builtin, .. } => {
+                // First lift the raw builtin value, then apply the configured lift expression.
+                let lifted = lift_rb_inner(name, builtin, custom_types)?;
+                if let Some(cfg) = custom_types.get(name.as_str()) {
+                    cfg.lift(&lifted)
+                } else {
+                    lifted
+                }
+            }
+            type_ => return lift_rb_inner_dispatch(name, type_, custom_types),
+        })
+    }
+
+    pub fn lift_rb_inner_dispatch(
+        nm: &str,
+        type_: &Type,
+        custom_types: &HashMap<String, CustomTypeConfig>,
+    ) -> Result<String, askama::Error> {
         Ok(match type_ {
             Type::Int8
             | Type::UInt8
@@ -395,8 +516,10 @@ mod filters {
             Type::Object { name, .. } => {
                 format!("{}.uniffi_allocate({nm})", class_name_rb_inner(name)?)
             }
-            Type::CallbackInterface { .. } => {
-                panic!("No support for lifting callback interfaces, yet")
+            Type::CallbackInterface { name, .. } => {
+                format!(
+                    "raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\""
+                )
             }
             Type::Enum { .. } => {
                 format!(
@@ -416,8 +539,25 @@ mod filters {
                 class_name_rb_inner(&canonical_name(type_))?
             ),
             Type::Box { .. } => unreachable!(),
-            Type::Custom { .. } => panic!("No support for lifting custom types, yet"),
+            Type::Custom { name, builtin, .. } => {
+                let lifted = lift_rb_inner(nm, builtin, custom_types)?;
+                if let Some(cfg) = custom_types.get(name.as_str()) {
+                    cfg.lift(&lifted)
+                } else {
+                    lifted
+                }
+            }
         })
+    }
+
+    #[askama::filter_fn]
+    pub fn lift_rb(
+        nm: &str,
+        _: &dyn askama::Values,
+        type_: &Type,
+        config: &Config,
+    ) -> Result<String, askama::Error> {
+        lift_rb_inner(nm, type_, &config.custom_types)
     }
 }
 
