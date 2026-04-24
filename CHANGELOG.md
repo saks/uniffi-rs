@@ -14,6 +14,7 @@
 - The `--config` flag now expects a [global config file](https://mozilla.github.io/uniffi-rs/next/bindings.html#global-configuration)
   rather than a flat `uniffi.toml`-style override. Old-style files will produce a warning and be ignored.
   See [#2866](https://github.com/mozilla/uniffi-rs/issues/2866)
+>>>>>>> 9cbce184b (fix ruby enums and make custom types work)
 
 ### What's Fixed
 
