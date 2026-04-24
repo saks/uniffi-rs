@@ -89,7 +89,7 @@ pub struct CustomTypeConfig {
 }
 
 impl CustomTypeConfig {
-    /// Produce ruby expression that lifts a raw-builtin value `nm` into the custom type.
+    /// Produce a Ruby expression that lifts a raw-builtin value `nm` into the custom type.
     fn lift(&self, name: &str) -> String {
         let converter = if self.lift.is_empty() {
             &self.into_custom
@@ -99,7 +99,7 @@ impl CustomTypeConfig {
         converter.replace("{}", name)
     }
 
-    /// Produce ruby expression that lowers a value `nm` of the custom type into a raw-builtin.
+    /// Produce a Ruby expression that lowers a value `nm` to its raw builtin.
     fn lower(&self, name: &str) -> String {
         let converter = if self.lower.is_empty() {
             &self.from_custom
@@ -124,6 +124,10 @@ pub struct Config {
     cdylib_path: Option<String>,
     #[serde(default)]
     custom_types: HashMap<String, CustomTypeConfig>,
+    #[serde(default)]
+    pub(super) exclude: Vec<String>,
+    #[serde(default)]
+    pub(super) rename: toml::Table,
 }
 
 impl Config {
@@ -302,7 +306,7 @@ mod filters {
             Type::CallbackInterface { name, .. } => {
                 // Callback interfaces are not yet supported; emit a Ruby runtime error so that
                 // code generation succeeds but calling such functions raises clearly.
-                format!("(raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\")")
+                format!("raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\"")
             }
             Type::Optional { inner_type: t } => {
                 format!(
@@ -334,7 +338,7 @@ mod filters {
             Type::Custom { name, builtin, .. } => {
                 // For config-backed custom types, the user passes a custom-typed values;
                 // skip builtin coercion (the lower expression handles conversion).
-                if custom_types.contains_key(name.as_str()) {
+                if custom_types.contains_key(name) {
                     nm.to_string()
                 } else {
                     coerce_rb_inner(nm, ns, builtin, custom_types)?
@@ -402,7 +406,7 @@ mod filters {
         Ok(match type_ {
             Type::Box { inner_type } => lower_rb_inner(nm, inner_type, custom_types)?,
             Type::Custom { name, builtin, .. } => {
-                if let Some(cfg) = custom_types.get(name.as_str()) {
+                if let Some(cfg) = custom_types.get(name) {
                     // Apply the configured `lower` expression, then lower the resulting builtin.
                     let lowered_nm = cfg.lower(nm);
                     lower_rb_inner(&lowered_nm, builtin, custom_types)?
@@ -434,7 +438,7 @@ mod filters {
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
-                    "raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\""
+                    "raise(NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\")"
                 )
             }
             Type::Enum { .. }
@@ -464,7 +468,7 @@ mod filters {
     }
 
     fn lift_rb_inner(
-        name: &str,
+        nm: &str,
         type_: &Type,
         custom_types: &HashMap<String, CustomTypeConfig>,
     ) -> Result<String, askama::Error> {
@@ -472,26 +476,26 @@ mod filters {
         while let Type::Box { inner_type } = type_ {
             type_ = &**inner_type;
         }
-        lift_rb_inner_no_box(name, type_, custom_types)
+        lift_rb_inner_no_box(nm, type_, custom_types)
     }
 
     fn lift_rb_inner_no_box(
-        name: &str,
+        nm: &str,
         type_: &Type,
         custom_types: &HashMap<String, CustomTypeConfig>,
     ) -> Result<String, askama::Error> {
         Ok(match type_ {
-            Type::Box { inner_type } => lift_rb_inner(name, inner_type, custom_types)?,
+            Type::Box { inner_type } => lift_rb_inner(nm, inner_type, custom_types)?,
             Type::Custom { name, builtin, .. } => {
                 // First lift the raw builtin value, then apply the configured lift expression.
-                let lifted = lift_rb_inner(name, builtin, custom_types)?;
-                if let Some(cfg) = custom_types.get(name.as_str()) {
+                let lifted = lift_rb_inner(nm, builtin, custom_types)?;
+                if let Some(cfg) = custom_types.get(name) {
                     cfg.lift(&lifted)
                 } else {
                     lifted
                 }
             }
-            type_ => return lift_rb_inner_dispatch(name, type_, custom_types),
+            type_ => return lift_rb_inner_dispatch(nm, type_, custom_types),
         })
     }
 
@@ -518,7 +522,7 @@ mod filters {
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
-                    "raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\""
+                    "raise(NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\")"
                 )
             }
             Type::Enum { .. } => {
@@ -541,7 +545,7 @@ mod filters {
             Type::Box { .. } => unreachable!(),
             Type::Custom { name, builtin, .. } => {
                 let lifted = lift_rb_inner(nm, builtin, custom_types)?;
-                if let Some(cfg) = custom_types.get(name.as_str()) {
+                if let Some(cfg) = custom_types.get(name) {
                     cfg.lift(&lifted)
                 } else {
                     lifted
