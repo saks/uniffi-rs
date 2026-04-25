@@ -30,12 +30,22 @@ class {{ e.name()|class_name_rb }}
 module {{ e.name()|class_name_rb }}
   {%- for variant in e.variants() %}
   class {{ variant.name()|class_name_rb }} < StandardError
+    {%- let named_fields = variant.has_fields() && !variant.fields()[0].name().is_empty() %}
+    {%- if named_fields %}
+    def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb }}:{% if !loop.last %}, {% endif %}{% endfor %})
+        {% for field in variant.fields() %}
+        @{{ field.name()|var_name_rb }} = {{ field.name()|var_name_rb }}
+        {% endfor %}
+        super()
+    end
+    {% else %}
     def initialize({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}{% if !loop.last %}, {% endif %}{% endfor %})
         {%- for field in variant.fields() %}
         @{% call rb::field_name(field, loop.index) %}{% endcall %} = {% call rb::field_name(field, loop.index) %}{% endcall %}
         {%- endfor %}
         super()
-      end
+    end
+    {% endif %}
     {%- if variant.has_fields() %}
 
     attr_reader {% for field in variant.fields() %}:{% call rb::field_name(field, loop.index) %}{% endcall %}{% if !loop.last %}, {% endif %}{% endfor %}
@@ -58,6 +68,11 @@ ERROR_MODULE_TO_READER_METHOD = {
      {{ e.name()|class_name_rb }} => :readType{{ e.name()|class_name_rb }},
 {% endif %}
 {%- endfor %}
+{% for obj in ci.object_definitions() %}
+{% if ci.is_name_used_as_error(obj.name()) %}
+     '{{ obj.name()|class_name_rb }}' => :readType{{ obj.name()|class_name_rb }},
+{% endif %}
+{%- endfor %}
 }
 
 private_constant :ERROR_MODULE_TO_READER_METHOD, :CALL_SUCCESS, :CALL_ERROR, :CALL_PANIC,
@@ -65,7 +80,8 @@ private_constant :ERROR_MODULE_TO_READER_METHOD, :CALL_SUCCESS, :CALL_ERROR, :CA
 
 def self.consume_buffer_into_error(error_module, rust_buffer)
   rust_buffer.consumeWithStream do |stream|
-    reader_method = ERROR_MODULE_TO_READER_METHOD[error_module]
+    reader_method = ERROR_MODULE_TO_READER_METHOD[error_module] ||
+                    ERROR_MODULE_TO_READER_METHOD[error_module.name&.split('::')&.last]
     return stream.send(reader_method)
   end
 end

@@ -1,4 +1,4 @@
-class {{ obj.name()|class_name_rb }}
+class {{ obj.name()|class_name_rb }}{% if ci.is_name_used_as_error(obj.name()) %} < StandardError{% endif %}
 
   # A private helper for initializing instances of the class from a raw handle,
   # bypassing any initialization logic and ensuring they are GC'd properly.

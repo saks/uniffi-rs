@@ -181,6 +181,13 @@ class RustBuffer < FFI::Struct
       return stream.read{{ canonical_type_name }}
     end
   end
+  {% else %}
+  # Enum used as error - generate consumeInto for use as a return value
+  def consumeInto{{ canonical_type_name }}
+    consumeWithStream do |stream|
+      return stream.read{{ canonical_type_name }}
+    end
+  end
   {% endif %}
 
   {% when Type::Optional { inner_type } -%}
