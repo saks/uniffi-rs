@@ -127,25 +127,17 @@ class TestErrorTypes < Test::Unit::TestCase
     assert_equal 1, e.v1
   end
 
+  def test_oops_custom
+    # CustomError is lowered as its builtin TupleError - identical behaviour to oops_tuple
+    e = assert_raises(ErrorTypes::TupleError::Value) { ErrorTypes.oops_custom 1 }
+
+    assert_equal 1, e.v1
+  end
+
   def test_get_tuple_default
     t = ErrorTypes.get_tuple
 
     assert_kind_of ErrorTypes::TupleError::Oops, t
     assert_equal 'oops', t.v1
   end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 end

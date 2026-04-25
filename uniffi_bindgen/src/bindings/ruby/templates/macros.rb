@@ -18,9 +18,20 @@ v{{- field_num -}}
 {%- endmacro -%}
   
 {%- macro to_ffi_call(func) -%}
-    {%- match func.throws_name() -%}
-    {%- when Some with (e) -%}
-      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ e|class_name_rb }},
+    {%- match func.throws_type() -%}
+    {%- when Some(Type::Custom { builtin, .. }) -%}
+      {%- match builtin.borrow() -%}
+      {%- when Type::Enum { name, .. } -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+      {%- when Type::Object { name, .. } -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+      {%- else -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call
+      {%- endmatch -%}
+    {%- when Some(Type::Enum { name, .. }) -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+    {%- when Some(Type::Object { name, .. }) -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
     {%- else -%}
       {{ ci.namespace()|class_name_rb }}.rust_call(
     {%- endmatch -%}
@@ -30,9 +41,20 @@ v{{- field_num -}}
 {%- endmacro -%}
 
 {%- macro to_ffi_call_with_prefix(prefix, func) -%}
-    {%- match func.throws_name() -%}
-    {%- when Some with (e) -%}
-      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ e|class_name_rb }},
+    {%- match func.throws_type() -%}
+    {%- when Some(Type::Custom { builtin, .. }) -%}
+      {%- match builtin.borrow() -%}
+      {%- when Type::Enum { name, .. } -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+      {%- when Type::Object { name, .. } -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+      {%- else -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call
+      {%- endmatch -%}
+    {%- when Some(Type::Enum { name, .. }) -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+    {%- when Some(Type::Object { name, .. }) -%}
+      {{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
     {%- else -%}
       {{ ci.namespace()|class_name_rb }}.rust_call(
     {%- endmatch -%}
