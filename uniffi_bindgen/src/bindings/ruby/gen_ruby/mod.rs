@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 
-use crate::interface::*;
+use crate::interface::{Enum, *};
 
 const RESERVED_WORDS: &[&str] = &[
     "alias", "and", "BEGIN", "begin", "break", "case", "class", "def", "defined?", "do", "else",
@@ -203,6 +203,10 @@ mod filters {
         let DefaultValue::Literal(literal) = default else {
             unimplemented!("not supported.");
         };
+        literal_rb_inner(literal)
+    }
+
+    fn literal_rb_inner(literal: &Literal) -> Result<String, askama::Error> {
         Ok(match literal {
             Literal::Boolean(v) => {
                 if *v {
@@ -214,7 +218,12 @@ mod filters {
             // use the double-quote form to match with the other languages, and quote escapes.
             Literal::String(s) => format!("\"{s}\""),
             Literal::None => "nil".into(),
-            Literal::Some { inner } => default_rb_inner(inner)?,
+            Literal::Some { inner } => match inner.as_ref() {
+                DefaultValue::Literal(lit) => literal_rb_inner(lit)?,
+                _ => {
+                    unimplemented!("nested Default in Some is not supported");
+                }
+            },
             Literal::EmptySequence => "[]".into(),
             Literal::EmptyMap => "{}".into(),
             Literal::Enum(v, type_) => match type_ {
@@ -236,6 +245,49 @@ mod filters {
             },
             Literal::Float(string, _type_) => string.clone(),
         })
+    }
+
+    /// Return the Ruby zero/default value for a type (used for `#[uniffi::default]`).
+    fn type_zero_value_rb(ty: &Type) -> Result<String, askama::Error> {
+        Ok(match ty {
+            Type::Int8
+            | Type::UInt8
+            | Type::Int16
+            | Type::UInt16
+            | Type::Int32
+            | Type::UInt32
+            | Type::Int64
+            | Type::UInt64 => "0".to_string(),
+            Type::Float32 | Type::Float64 => "0.0".to_string(),
+            Type::Boolean => "false".to_string(),
+            Type::String => "\"\"".to_string(),
+            Type::Optional { .. } => "nil".to_string(),
+            Type::Bytes | Type::Sequence { .. } => "[]".to_string(),
+            Type::Map { .. } => "{}".to_string(),
+            _ => {
+                return Err(askama::Error::Custom(
+                    anyhow::anyhow!("No zero value for type {ty:?}").into(),
+                ))
+            }
+        })
+    }
+
+    /// Render the Ruby default value for a field, handling both `Default` and `Literal` variants.
+    #[askama::filter_fn]
+    pub fn field_default_rb(
+        field: &Field,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
+        match field.default_value() {
+            Some(DefaultValue::Default) => {
+                let ty = field.as_type();
+                type_zero_value_rb(&ty)
+            }
+            Some(DefaultValue::Literal(lit)) => literal_rb_inner(lit),
+            None => Err(askama::Error::Custom(
+                anyhow::anyhow!("field_default_rb called on field with no default value").into(),
+            )),
+        }
     }
 
     #[askama::filter_fn]
@@ -562,6 +614,26 @@ mod filters {
         config: &Config,
     ) -> Result<String, askama::Error> {
         lift_rb_inner(nm, type_, &config.custom_types)
+    }
+
+    /// Render a Ruby integer literal for the discriminant of the variant at `index` in enum `e`.
+    #[askama::filter_fn]
+    pub fn variant_discr_literal(
+        e: &Enum,
+        _: &dyn askama::Values,
+        index: &usize,
+    ) -> Result<String, askama::Error> {
+        let literal = e
+            .variant_discr(*index)
+            .map_err(|err| askama::Error::Custom(err.into()))?;
+
+        match literal {
+            Literal::UInt(v, _, _) => Ok(v.to_string()),
+            Literal::Int(v, _, _) => Ok(v.to_string()),
+            _ => Err(askama::Error::Custom(
+                anyhow::anyhow!("Only integer discriminants are supported").into(),
+            )),
+        }
     }
 }
 

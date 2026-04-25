@@ -2,7 +2,7 @@
 
 class {{ e.name()|class_name_rb }}
   {% for variant in e.variants() -%}
-  {{ variant.name()|enum_name_rb }} = {{ loop.index }}
+  {{ variant.name()|enum_name_rb }} = {{ e|variant_discr_literal(loop.index0) }}
   {% endfor %}
 end
 
@@ -16,9 +16,22 @@ class {{ e.name()|class_name_rb }}
   # Each enum variant is a nested class of the enum itself.
   {% for variant in e.variants() -%}
   class {{ variant.name()|enum_name_rb }}
+    {%- let named_fields = variant.has_fields() && !variant.fields()[0].name().is_empty() %}
     {% if variant.has_fields() %}
          attr_reader {% for field in variant.fields() %}:{% call rb::field_name(field, loop.index) %}{% endcall %}{% if loop.last %}{% else %}, {% endif %}{%- endfor %}
     {% endif %}
+    {%- if named_fields %}
+    def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb -}}:
+      {%- match field.default_value() %}
+      {%- when Some(default) %} {{ field|field_default_rb }}
+      {%- else %}
+      {% endmatch %}
+      {%- if loop.last %}{% else %}, {% endif -%}{% endfor %})
+        {%- for field in variant.fields() %}
+        @{{ field.name()|var_name_rb }} = {{ field.name()|var_name_rb }}
+        {%- endfor %}
+    end
+    {%- else %}
     def initialize({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}{% if loop.last %}{% else %}, {% endif %}{% endfor %})
       {% if variant.has_fields() %}
       {%- for field in variant.fields() %}
@@ -27,21 +40,18 @@ class {{ e.name()|class_name_rb }}
       {% else %}
       {% endif %}
     end
+    {% endif %}
 
     def to_s
       "{{ e.name()|class_name_rb }}::{{ variant.name()|enum_name_rb }}"
     end
 
     def ==(other)
-      if !other.{{ variant.name()|var_name_rb }}?
-        return false
-      end
+      return false unless other.respond_to?(:{{variant.name()|var_name_rb}}?)
+      return false unless other.{{ variant.name()|var_name_rb }}?
       {%- for field in variant.fields() %}
-        if @{% call rb::field_name(field, loop.index) %}{% endcall %} != other.{% call rb::field_name(field, loop.index) %}{% endcall %}
-        return false
-      end
+        return false if @{% call rb::field_name(field, loop.index) %}{% endcall %} != other.{% call rb::field_name(field, loop.index) %}{% endcall %}
       {%- endfor %}
-
       true
     end
 

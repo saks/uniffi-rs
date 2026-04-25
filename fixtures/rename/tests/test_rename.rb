@@ -27,7 +27,9 @@ class TestRename < Test::Unit::TestCase
   end
 
   def test_renamed_enum_with_fields
-    variant = UniffiFixtureRename::RenamedEnumWithFields::RENAMED_VARIANT_WITH_FIELDS.new 42
+    variant = UniffiFixtureRename::RenamedEnumWithFields::RENAMED_VARIANT_WITH_FIELDS.new(
+      renamed_variant_field: 42
+    )
 
     assert variant.renamed_variant_with_fields?
     assert_equal 42, variant.renamed_variant_field
@@ -86,12 +88,12 @@ class TestBindingRenames < Test::Unit::TestCase
   end
 
   def test_rb_enum_with_fields
-    variant_a = UniffiFixtureRename::RbEnumWithFields::RB_VARIANT_A.new 42
+    variant_a = UniffiFixtureRename::RbEnumWithFields::RB_VARIANT_A.new rb_int: 42
     assert variant_a.rb_variant_a?
     assert_equal 42, variant_a.rb_int
 
     inner = UniffiFixtureRename::RbRecord.new rb_item: 7
-    variant_rec = UniffiFixtureRename::RbEnumWithFields::RB_RECORD.new inner, 3
+    variant_rec = UniffiFixtureRename::RbEnumWithFields::RB_RECORD.new rb_record: inner, rb_int: 3
     
     assert variant_rec.rb_record?
     assert_equal inner, variant_rec.rb_record

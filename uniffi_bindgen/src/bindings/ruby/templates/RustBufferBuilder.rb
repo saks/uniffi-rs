@@ -174,7 +174,11 @@ class RustBufferBuilder
 
   def write_{{ canonical_type_name }}(v)
     {%- if e.is_flat() %}
-    pack_into(4, 'l>', v)
+    {%- for variant in e.variants() %}
+    if v == {{ enum_name|class_name_rb }}::{{ variant.name()|enum_name_rb }}
+      pack_into(4, 'l>', {{ loop.index }})
+    end
+    {%- endfor %}
     {%- else -%}
     {%- for variant in e.variants() %}
     if v.{{ variant.name()|var_name_rb }}?
