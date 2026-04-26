@@ -39,20 +39,39 @@ module {{ e.name()|class_name_rb }}
         super()
     end
     {% else %}
-    def initialize({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}{% if !loop.last %}, {% endif %}{% endfor %})
-        {%- for field in variant.fields() %}
-        @{% call rb::field_name(field, loop.index) %}{% endcall %} = {% call rb::field_name(field, loop.index) %}{% endcall %}
-        {%- endfor %}
+    def initialize({% for field in variant.fields() %}v{{ loop.index }}{% if !loop.last %}, {% endif %}{% endfor %})
+        {% if variant.has_fields() %}
+        @values = [{% for field in variant.fields() %}v{{ loop.index }}{% if !loop.last %}, {% endif %}{% endfor %}]
+        {% endif %}
         super()
     end
     {% endif %}
     {%- if variant.has_fields() %}
+    {%- if named_fields %}
 
-    attr_reader {% for field in variant.fields() %}:{% call rb::field_name(field, loop.index) %}{% endcall %}{% if !loop.last %}, {% endif %}{% endfor %}
+    attr_reader {% for field in variant.fields() %}:{{ field.name()|var_name_rb }}{% if !loop.last %}, {% endif %}{% endfor %}
+    {%- else %}
+
+    attr_reader :values
+
+    def [](index)
+        @values[index]
+    end
+    {%- endif %}
     {% endif %}
 
     def to_s
-     "#{self.class.name}({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}=#{@{% call rb::field_name(field, loop.index) %}{% endcall %}.inspect}{% if !loop.last %}, {% endif %}{% endfor %})"
+      {%- if named_fields %}
+        "#{self.class.name}({% for field in variant.fields() %}{{ field.name()|var_name_rb }}=#{@{{ field.name()|var_name_rb }}.inspect}{% if !loop.last %}, {% endif %}{% endfor %})"
+
+      {%- else %}
+      {%- if variant.has_fields() %}
+        "#{self.class.name}(#{@values.inspect})"
+      {%- else %}
+        "#{self.class.name}()"
+      {%- endif %}
+      {%- endif %}
+
     end
   end
   {%- endfor %}

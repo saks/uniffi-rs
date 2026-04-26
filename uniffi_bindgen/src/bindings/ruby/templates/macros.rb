@@ -11,7 +11,7 @@
 #}
 {%- macro field_name(field, field_num) -%}
 {%- if field.name().is_empty() -%}
-v{{- field_num -}}
+values[{{- field_num - 1 -}}]
 {%- else -%}
 {{ field.name()|var_name_rb }}
 {%- endif -%}

@@ -23,7 +23,7 @@ class TestRename < Test::Unit::TestCase
     variant_record = UniffiFixtureRename::RenamedEnum::RECORD.new record
     assert !variant_record.renamed_variant?
     assert variant_record.record?
-    assert_equal 42, variant_record.v1.renamed_field
+    assert_equal 42, variant_record[0].renamed_field
   end
 
   def test_renamed_enum_with_fields
@@ -40,7 +40,7 @@ class TestRename < Test::Unit::TestCase
     result = UniffiFixtureRename.renamed_function record
 
     assert_instance_of UniffiFixtureRename::RenamedEnum::RECORD, result
-    assert_equal 42, result.v1.renamed_field
+    assert_equal 42, result[0].renamed_field
   end
 
   def test_renamed_object
@@ -84,7 +84,7 @@ class TestBindingRenames < Test::Unit::TestCase
 
     variant_record = UniffiFixtureRename::RbEnum::RB_RECORD.new record
     assert variant_record.rb_record?
-    assert_equal 42, variant_record.v1.rb_item
+    assert_equal 42, variant_record[0].rb_item
   end
 
   def test_rb_enum_with_fields
@@ -105,7 +105,7 @@ class TestBindingRenames < Test::Unit::TestCase
     result = UniffiFixtureRename.rb_function record
 
     assert_instance_of UniffiFixtureRename::RbEnum::RB_RECORD, result
-    assert_equal 99, result.v1.rb_item
+    assert_equal 99, result[0].rb_item
   end
 
   def test_rb_function_with_nil_raises

@@ -42,11 +42,11 @@ class TestEnumTypes < Test::Unit::TestCase
   def test_containers
     dog_enum = EnumTypes.get_animal_enum(EnumTypes::Animal::DOG)
     assert dog_enum.dog?
-    assert_equal 'dog', dog_enum.v1.get_record.name
+    assert_equal 'dog', dog_enum[0].get_record.name
 
     cat_enum = EnumTypes.get_animal_enum(EnumTypes::Animal::CAT)
     assert cat_enum.cat?
-    assert_equal 'cat', cat_enum.v1.name
+    assert_equal 'cat', cat_enum[0].name
 
     # Equality: Ruby doesn't support equality for enums, so we can't test that dog_enum ==
     # EnumTypes.get_animal_enum(EnumTypes::Animal::DOG).

@@ -18,7 +18,11 @@ class {{ e.name()|class_name_rb }}
   class {{ variant.name()|enum_name_rb }}
     {%- let named_fields = variant.has_fields() && !variant.fields()[0].name().is_empty() %}
     {% if variant.has_fields() %}
-         attr_reader {% for field in variant.fields() %}:{% call rb::field_name(field, loop.index) %}{% endcall %}{% if loop.last %}{% else %}, {% endif %}{%- endfor %}
+    {%- if named_fields %}
+      attr_reader {% for field in variant.fields() %}:{{ field.name()|var_name_rb }}{% if loop.last %}{% else %}, {% endif %}{%- endfor %}
+    {%- else %}
+      attr_reader :values
+    {%- endif %}
     {% endif %}
     {%- if named_fields %}
     def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb -}}:
@@ -32,13 +36,15 @@ class {{ e.name()|class_name_rb }}
         {%- endfor %}
     end
     {%- else %}
-    def initialize({% for field in variant.fields() %}{% call rb::field_name(field, loop.index) %}{% endcall %}{% if loop.last %}{% else %}, {% endif %}{% endfor %})
+    def initialize({% for field in variant.fields() %}v{{ loop.index }}{% if loop.last %}{% else %}, {% endif %}{% endfor %})
       {% if variant.has_fields() %}
-      {%- for field in variant.fields() %}
-        @{% call rb::field_name(field, loop.index) %}{% endcall %} = {% call rb::field_name(field, loop.index) %}{% endcall %}
-      {%- endfor %}
+        @values = [{% for field in variant.fields() %}v{{ loop.index }}{% if loop.last %}{% else %}, {% endif %}{% endfor %}]
       {% else %}
       {% endif %}
+    end
+
+    def [](index)
+      @values[index]
     end
     {% endif %}
 
@@ -49,9 +55,15 @@ class {{ e.name()|class_name_rb }}
     def ==(other)
       return false unless other.respond_to?(:{{variant.name()|var_name_rb}}?)
       return false unless other.{{ variant.name()|var_name_rb }}?
+      {%- if named_fields %}
       {%- for field in variant.fields() %}
-        return false if @{% call rb::field_name(field, loop.index) %}{% endcall %} != other.{% call rb::field_name(field, loop.index) %}{% endcall %}
+        return false if @{{ field.name()|var_name_rb }} != other.{{ field.name()|var_name_rb }}
       {%- endfor %}
+      {%- else %}
+      {%- if variant.has_fields() %}
+        return false if @values != other.values
+      {% endif %}
+      {% endif %}
       true
     end
 

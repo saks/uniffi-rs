@@ -112,32 +112,32 @@ class TestErrorTypes < Test::Unit::TestCase
     e = assert_raises(ErrorTypes::Error::InnerError) { ErrorTypes.oops_enum 5 }
 
     assert_kind_of ErrorTypes::Inner::CaseA, e.error
-    assert_equal 'inner', e.error.v1
+    assert_equal 'inner', e.error[0]
   end
 
   def test_oops_tuple_oops
     e = assert_raises(ErrorTypes::TupleError::Oops) { ErrorTypes.oops_tuple 0 }
 
-    assert_equal 'oops', e.v1
+    assert_equal 'oops', e[0]
   end
 
   def test_oops_tuple_value
     e = assert_raises(ErrorTypes::TupleError::Value) { ErrorTypes.oops_tuple 1 }
 
-    assert_equal 1, e.v1
+    assert_equal 1, e[0]
   end
 
   def test_oops_custom
     # CustomError is lowered as its builtin TupleError - identical behaviour to oops_tuple
     e = assert_raises(ErrorTypes::TupleError::Value) { ErrorTypes.oops_custom 1 }
 
-    assert_equal 1, e.v1
+    assert_equal 1, e[0]
   end
 
   def test_get_tuple_default
     t = ErrorTypes.get_tuple
 
     assert_kind_of ErrorTypes::TupleError::Oops, t
-    assert_equal 'oops', t.v1
+    assert_equal 'oops', t[0]
   end
 end
