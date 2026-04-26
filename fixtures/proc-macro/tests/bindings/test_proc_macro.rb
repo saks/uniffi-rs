@@ -42,7 +42,7 @@ class TestProcMacroDefaults < Test::Unit::TestCase
     assert_equal 0.0, r.adouble
     assert_equal [], r.vec
     assert_equal({}, r.map)
-    assert_equal [], r.some_bytes
+    assert_equal ''.b, r.some_bytes
     assert_nil r.opt_int32
     assert_equal 0, r.custom_integer
   end

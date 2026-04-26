@@ -249,7 +249,8 @@ mod filters {
             Type::Boolean => "false".to_string(),
             Type::String => "\"\"".to_string(),
             Type::Optional { .. } => "nil".to_string(),
-            Type::Bytes | Type::Sequence { .. } => "[]".to_string(),
+            Type::Sequence { .. } => "[]".to_string(),
+            Type::Bytes => "\"\".b".to_string(),
             Type::Map { .. } => "{}".to_string(),
             // Named types with no-arg constructors
             Type::Record { name, .. } | Type::Object { name, .. } => {
