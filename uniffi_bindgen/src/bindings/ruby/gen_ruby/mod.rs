@@ -191,14 +191,6 @@ mod filters {
         })
     }
 
-    #[askama::filter_fn]
-    pub fn default_rb(
-        default: &DefaultValue,
-        _: &dyn askama::Values,
-    ) -> Result<String, askama::Error> {
-        default_rb_inner(default)
-    }
-
     fn default_rb_inner(default: &DefaultValue) -> Result<String, askama::Error> {
         let DefaultValue::Literal(literal) = default else {
             unimplemented!("not supported.");
@@ -218,12 +210,7 @@ mod filters {
             // use the double-quote form to match with the other languages, and quote escapes.
             Literal::String(s) => format!("\"{s}\""),
             Literal::None => "nil".into(),
-            Literal::Some { inner } => match inner.as_ref() {
-                DefaultValue::Literal(lit) => literal_rb_inner(lit)?,
-                _ => {
-                    unimplemented!("nested Default in Some is not supported");
-                }
-            },
+            Literal::Some { inner } => default_rb_inner(inner)?,
             Literal::EmptySequence => "[]".into(),
             Literal::EmptyMap => "{}".into(),
             Literal::Enum(v, type_) => match type_ {
@@ -264,6 +251,12 @@ mod filters {
             Type::Optional { .. } => "nil".to_string(),
             Type::Bytes | Type::Sequence { .. } => "[]".to_string(),
             Type::Map { .. } => "{}".to_string(),
+            // Named types with no-arg constructors
+            Type::Record { name, .. } | Type::Object { name, .. } => {
+                format!("{}.new", class_name_rb_inner(name)?)
+            }
+            // Custom types delegate to their underlying builtin
+            Type::Custom { builtin, .. } => type_zero_value_rb(builtin)?,
             _ => {
                 return Err(askama::Error::Custom(
                     anyhow::anyhow!("No zero value for type {ty:?}").into(),
@@ -286,6 +279,18 @@ mod filters {
             Some(DefaultValue::Literal(lit)) => literal_rb_inner(lit),
             None => Err(askama::Error::Custom(
                 anyhow::anyhow!("field_default_rb called on field with no default value").into(),
+            )),
+        }
+    }
+
+    /// Render the Ruby default value for a function/method argument.
+    #[askama::filter_fn]
+    pub fn arg_default_rb(arg: &Argument, _: &dyn askama::Values) -> Result<String, askama::Error> {
+        match arg.default_value() {
+            Some(DefaultValue::Default) => type_zero_value_rb(&arg.as_type()),
+            Some(DefaultValue::Literal(lit)) => literal_rb_inner(lit),
+            None => Err(askama::Error::Custom(
+                anyhow::anyhow!("arg_default_rb called on arg with no default value").into(),
             )),
         }
     }
