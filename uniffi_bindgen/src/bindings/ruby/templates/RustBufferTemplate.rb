@@ -182,6 +182,15 @@ class RustBuffer < FFI::Struct
     end
   end
   {% else %}
+  {%- let e = ci.get_enum_definition(enum_name).unwrap() -%}
+  # Error enum - generate alloc_from for callback error serialization
+  def self.alloc_from_{{ canonical_type_name }}(v)
+    RustBuffer.allocWithBuilder do |builder|
+      builder.write_{{ canonical_type_name }}(v)
+      return builder.finalize
+    end
+  end
+
   # Enum used as error - generate consumeInto for use as a return value
   def consumeInto{{ canonical_type_name }}
     consumeWithStream do |stream|
@@ -194,7 +203,7 @@ class RustBuffer < FFI::Struct
   # The Optional<T> type for {{ self::canonical_name(inner_type) }}.
 
   def self.check_lower_{{ canonical_type_name }}(v)
-    if not v.nil?
+    if !v.nil?
       {{ "v"|check_lower_rb(inner_type.borrow(), config) }}
     end
   end

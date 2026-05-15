@@ -190,7 +190,35 @@ class RustBufferBuilder
     {%- endfor %}
     {%- endif %}
  end
-   {% endif %}
+  {% else %}
+  {%- let e = ci.get_enum_definition(enum_name).unwrap() -%}
+  # The Error type {{ enum_name }} - write for callback error returns.
+
+  def write_{{ canonical_type_name }}(v)
+    {%- if e.is_flat() %}
+    {%- for variant in e.variants() %}
+    if v.is_a?({{ enum_name|class_name_rb }}::{{ variant.name()|class_name_rb }})
+      pack_into 4, 'l>', {{ loop.index }}
+      return
+    end
+    {%- endfor %}
+    {%- else -%}
+    {%- for variant in e.variants() %}
+    if v.is_a?({{ enum_name|class_name_rb }}::{{ variant.name()|class_name_rb }})
+      pack_into 4, 'l>', {{ loop.index }}
+      {%- for field in variant.fields() %}
+        {%- if field.name().is_empty() %}
+        self.write_{{ self::canonical_name(field.as_type().borrow()).borrow()|class_name_rb }}(v[{{ loop.index0 }}])
+        {%- else %}
+        self.write_{{ self::canonical_name(field.as_type().borrow()).borrow()|class_name_rb }}(v.{{ field.name()|var_name_rb }})
+        {%- endif %}
+      {%- endfor %}
+      return
+    end
+    {%- endfor %}
+    {%- endif %}
+  end
+  {% endif %}
 
   {% when Type::Record { name: record_name, .. } -%}
   {%- let rec = ci.get_record_definition(record_name).unwrap() -%}
@@ -267,6 +295,13 @@ class RustBufferBuilder
     write_{{ self::canonical_name(builtin).borrow()|class_name_rb }}(v)
   end
   {%- endmatch %}
+
+  {% when Type::CallbackInterface { name, .. } -%}
+  # The CallbackInterface type {{ name }}: write a uint64 handle.
+  def write_{{ canonical_type_name }}(v)
+    handle = CallbackInterface{{ name|class_name_rb }}FfiConverter.lower(v)
+    pack_into 8, 'Q>', handle
+  end
 
   {%- else -%}
   # This type is not yet supported in the Ruby backend.

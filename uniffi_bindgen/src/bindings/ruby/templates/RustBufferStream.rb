@@ -330,6 +330,14 @@ class RustBufferStream
   end
   {%- endmatch %}
 
+  {% when Type::CallbackInterface { name, .. } -%}
+
+  # The CallbackInterface type {{ name }}: read a uint64 handle.
+  def read{{ canonical_type_name }}
+    handle = unpack_from 8, 'Q>'
+    CallbackInterface{{ name|class_name_rb }}FfiConverter.lift handle
+  end
+
   {%- else -%}
   # This type is not yet supported in the Ruby backend.
   def read{{ canonical_type_name }}

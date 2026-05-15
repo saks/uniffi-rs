@@ -179,16 +179,39 @@ mod filters {
             FfiType::RustBuffer(_) => "RustBuffer.by_value".to_string(),
             FfiType::RustCallStatus => "RustCallStatus".to_string(),
             FfiType::ForeignBytes => "ForeignBytes".to_string(),
-            FfiType::Callback(_) => unimplemented!("FFI Callbacks not implemented"),
-            // Note: this can't just be `unimplemented!()` because some of the FFI function
-            // definitions use references.  Those FFI functions aren't actually used, so we just
-            // pick something that runs and makes some sense.  Revisit this once the references
-            // are actually implemented.
-            FfiType::Reference(_) | FfiType::MutReference(_) => ":pointer".to_string(),
+            FfiType::Callback(name) => format!(":{name}"),
+            FfiType::Reference(inner) | FfiType::MutReference(inner) => match inner.as_ref() {
+                FfiType::Struct(name) => format!("{name}.by_ref"),
+                _ => ":pointer".to_string(),
+            },
             FfiType::VoidPointer => ":pointer".to_string(),
-            FfiType::Struct(_) => {
-                unimplemented!("Structs are not implemented")
-            }
+            FfiType::Struct(name) => format!("{name}.by_value"),
+        })
+    }
+
+    /// Generate the Ruby FFI::Pointer write method name for writing a lowered return value.
+    /// For RustBuffer returns, return "rustbuffer" as a sentinel - template handles it specially.
+    #[askama::filter_fn]
+    pub fn ffi_write_return_rb(
+        return_type: &Type,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
+        let ffi_type = FfiType::from(return_type);
+
+        Ok(match &ffi_type {
+            FfiType::Int8 => "write_int8".to_string(),
+            FfiType::UInt8 => "write_uint8".to_string(),
+            FfiType::Int16 => "write_int16".to_string(),
+            FfiType::UInt16 => "write_uint16".to_string(),
+            FfiType::Int32 => "write_int32".to_string(),
+            FfiType::UInt32 => "write_uint32".to_string(),
+            FfiType::Int64 => "write_int64".to_string(),
+            FfiType::UInt64 => "write_uint64".to_string(),
+            FfiType::Float32 => "write_float".to_string(),
+            FfiType::Float64 => "write_double".to_string(),
+            FfiType::Handle => "write_uint64".to_string(),
+            FfiType::RustBuffer(_) => "rustbuffer".to_string(),
+            _ => panic!("Unsupported FFI return type for callback: {ffi_type:?}"),
         })
     }
 
@@ -364,11 +387,7 @@ mod filters {
             Type::String => format!("::{ns}::uniffi_utf8({nm})"),
             Type::Bytes => format!("::{ns}::uniffi_bytes({nm})"),
             Type::Timestamp | Type::Duration => nm.to_string(),
-            Type::CallbackInterface { name, .. } => {
-                // Callback interfaces are not yet supported; emit a Ruby runtime error so that
-                // code generation succeeds but calling such functions raises clearly.
-                format!("raise NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\"")
-            }
+            Type::CallbackInterface { .. } => nm.to_string(),
             Type::Optional { inner_type: t } => {
                 format!(
                     "({nm} ? {} : nil)",
@@ -508,7 +527,9 @@ mod filters {
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
-                    "raise(NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\")"
+                    "(CallbackInterface{}FfiConverter.lower {})",
+                    class_name_rb_inner(name)?,
+                    nm
                 )
             }
             Type::Enum { .. }
@@ -589,11 +610,12 @@ mod filters {
             Type::String => format!("{nm}.consumeIntoString"),
             Type::Bytes => format!("{nm}.consumeIntoBytes"),
             Type::Object { name, .. } => {
-                format!("{}.uniffi_allocate({nm})", class_name_rb_inner(name)?)
+                format!("{}.uniffi_lift({nm})", class_name_rb_inner(name)?)
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
-                    "raise(NotImplementedError, \"Callback interface {name} is not yet supported in the Ruby bindings\")"
+                    "(CallbackInterface{}FfiConverter.lift {nm})",
+                    class_name_rb_inner(name)?
                 )
             }
             Type::Enum { .. } => {
