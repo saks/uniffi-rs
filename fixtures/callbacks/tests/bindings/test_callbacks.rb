@@ -107,6 +107,7 @@ class TestCallbacks < Test::Unit::TestCase
       @rust_getters.get_option(@callback, 'unexpected-error', true)
     end
     assert_kind_of String, e.reason
+    assert_match e.reason, SomeOtherError.new('unexpected value').inspect
 
     assert_raises(FixtureCallbacks::SimpleError::BadArgument) do
       @rust_getters.get_nothing(@callback, 'bad-argument')

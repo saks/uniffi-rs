@@ -52,7 +52,7 @@ def self.uniffi_trait_interface_call_with_error(call_status, make_call, write_re
       error_buf[:data] = buf[:data]
     else
       call_status[:code] = UNIFFI_CALLBACK_UNEXPECTED_ERROR
-      buf = RustBuffer.allocFromString "#{e.class.name}: #{e.message}"
+      buf = RustBuffer.allocFromString "#<#{e.class.name}: #{e.message}>"
       error_buf = call_status[:error_buf]
       error_buf[:capacity] = buf[:capacity]
       error_buf[:len] = buf[:len]
