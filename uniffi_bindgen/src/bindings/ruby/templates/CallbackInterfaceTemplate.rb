@@ -1,6 +1,6 @@
 {%- let cbi = ci.get_callback_interface_definition(name).unwrap() %}
 {%- let cbi_name = name %}
-{%- let interface_name = cbi|type_name(ci) %}
+{%- let interface_name = cbi.name() %}
 
 class {{ interface_name }}
   {% for meth in cbi.methods() -%}
