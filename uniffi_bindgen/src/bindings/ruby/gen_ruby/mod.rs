@@ -163,6 +163,15 @@ mod filters {
     use super::*;
 
     #[askama::filter_fn]
+    pub(super) fn type_name(
+        cbi: &&CallbackInterface,
+        _: &dyn askama::Values,
+        _ci: &ComponentInterface,
+    ) -> Result<String, askama::Error> {
+        Ok(cbi.name().to_string())
+    }
+
+    #[askama::filter_fn]
     pub fn type_ffi(type_: &FfiType, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(match type_ {
             FfiType::Int8 => ":int8".to_string(),
