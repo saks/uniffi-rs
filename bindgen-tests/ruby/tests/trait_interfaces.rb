@@ -36,6 +36,18 @@ class TraitImpl
     self.value = value
   end
 
+  def roundtrip_record(value)
+    value
+  end
+
+  def roundtrip_enum(value)
+    value
+  end
+
+  def roundtrip_interface(value)
+    value
+  end
+
   def throw_if_equal(numbers)
     raise UniffiBindgenTests::TestError::Failure1 if numbers.a == numbers.b
 
@@ -56,6 +68,13 @@ class TestTraitInterfaces < Test::Unit::TestCase
     end
     numbers = CallbackInterfaceNumbers.new(a: 10, b: 11)
     assert_equal numbers, trait_impl.throw_if_equal(numbers)
+
+    assert_equal trait_impl.roundtrip_record(SimpleRec.new(a: 10)), SimpleRec.new(a: 10)
+    assert_equal(
+      trait_impl.roundtrip_enum(EnumWithData::A.new(value: 10, value2: 20)),
+      EnumWithData::A.new(value: 10, value2: 20)
+    )
+    assert_equal trait_impl.roundtrip_interface(TestInterface.new(20)).get_value, 20
   end
 
   def check_rb_impl(trait_impl)
@@ -71,6 +90,21 @@ class TestTraitInterfaces < Test::Unit::TestCase
     end
     numbers = CallbackInterfaceNumbers.new(a: 10, b: 11)
     assert_equal numbers, UniffiBindgenTests.invoke_test_trait_interface_throw_if_equal(trait_impl, numbers)
+
+    assert_equal(
+      UniffiBindgenTests.invoke_test_trait_interface_roundtrip_record(trait_impl, SimpleRec.new(a: 10)),
+      SimpleRec.new(a: 10)
+    )
+    assert_equal(
+      UniffiBindgenTests.invoke_test_trait_interface_roundtrip_enum(trait_impl,
+                                                                    EnumWithData::A.new(value: 10, value2: 20)),
+      EnumWithData::A.new(value: 10, value2: 20)
+    )
+
+    assert_equal(
+      UniffiBindgenTests.invoke_test_trait_interface_roundtrip_interface(trait_impl, TestInterface.new(20)).get_value,
+      20
+    )
   end
 
   def test_rust_impl
@@ -100,9 +134,24 @@ class TestTraitInterfaces < Test::Unit::TestCase
   def test_rb_impl_roundtripped
     impl = UniffiBindgenTests.roundtrip_test_trait_interface(TraitImpl.new(42))
     check_rb_impl(impl)
+    # rubocop:disable Lint/UselessAssignment
     impl = nil
+    # rubocop:enable Lint/UselessAssignment
     GC.start
     assert_equal 0, TraitImpl.ref_count
   end
+end
 
+class TestRustOnlyTraitInterfaces < Test::Unit::TestCase
+  include UniffiBindgenTests
+
+  def check_rust_only_impl(impl)
+    assert_raises(TestError::Failure1) do
+      impl.throw_if_equal(CallbackInterfaceNumbers.new(a: 10, b: 10))
+    end
+  end
+
+  def test_rust_only_impl
+    check_rust_only_impl UniffiBindgenTests.create_rust_only_test_trait_interface
+  end
 end
