@@ -25,8 +25,8 @@ class TestEnums < Test::Unit::TestCase
 
   # --- EnumWithData (non-flat enum) ---
   def test_enum_with_data_named_variant
-    em = EnumWithData::A.new value: 10, value2: 20
-    result = UniffiBindgenTests.roundtrip_enum_with_data(em)
+    en = EnumWithData::A.new value: 10, value2: 20
+    result = UniffiBindgenTests.roundtrip_enum_with_data(en)
 
     assert_kind_of EnumWithData::A, result
     assert_equal 10, result.value
@@ -50,15 +50,23 @@ class TestEnums < Test::Unit::TestCase
     assert_kind_of EnumWithData::C, result
   end
 
+  # TODO: implement enum methods
+  # def test_methods
+  #   assert_equal(
+  #     EnumWithData::A.new(value: 1, value2: 0).roundtrip(), 
+  #     EnumWithData::A.new(value: 1, value2: 0)
+  #   )
+  # end
+
   # --- ComplexEnum ---
 
   def test_complex_enum_a
-    inner = EnumNoData::B
+    inner = EnumNoData::C
     en = ComplexEnum::A.new value: inner
     result = UniffiBindgenTests.roundtrip_complex_enum(en)
 
     assert_kind_of ComplexEnum::A, result
-    assert_equal EnumNoData::B, result.value
+    assert_equal EnumNoData::C, result.value
   end
 
   def test_complex_enum_b
@@ -84,14 +92,18 @@ class TestEnums < Test::Unit::TestCase
 
   # --- ExplicitValuedEnum ---
 
-  # ExplicitValuedEnum is a separate type from EnumNoData - just verify constants exists and differ
-  def test_explicit_valued_enum_roundtrip
-    assert_not_nil ExplicitValuedEnum::FIRST
-    assert_not_nil ExplicitValuedEnum::SECOND
-    assert_not_nil ExplicitValuedEnum::FOURTH
-    assert_not_nil ExplicitValuedEnum::TENTH
-    assert_not_nil ExplicitValuedEnum::ELEVENTH
-    assert_not_nil ExplicitValuedEnum::THIRTEENTH
+  def test_discriminents
+    assert_equal 1, ExplicitValuedEnum::FIRST
+    assert_equal 2, ExplicitValuedEnum::SECOND
+    assert_equal 4, ExplicitValuedEnum::FOURTH
+    assert_equal 10, ExplicitValuedEnum::TENTH
+    assert_equal 11, ExplicitValuedEnum::ELEVENTH
+    assert_equal 13, ExplicitValuedEnum::THIRTEENTH
+
+    # Some discriminants specified, increment by one for any unspecified variants
+    assert_equal 10, GappedEnum::ONE
+    assert_equal 11, GappedEnum::TWO # Sequential value after ONE (10+1)
+    assert_equal 14, GappedEnum::THREE # Explicit value
   end
 
   def test_explicit_valued_enum_distinct
