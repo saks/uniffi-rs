@@ -67,14 +67,14 @@ class RustBuffer < FFI::Struct
   {% when Type::String -%}
   # The primitive String type.
 
-  def self.allocFromString(value)
+  def self.alloc_from_{{ canonical_type_name }}(value)
     RustBuffer.allocWithBuilder do |builder|
       builder.write value.encode('utf-8')
       return builder.finalize
     end
   end
 
-  def consumeIntoString
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read(stream.remaining).force_encoding(Encoding::UTF_8)
     end
@@ -83,16 +83,16 @@ class RustBuffer < FFI::Struct
   {% when Type::Bytes -%}
   # The primitive Bytes type.
 
-  def self.allocFromBytes(value)
+  def self.alloc_from_{{ canonical_type_name }}(value)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_Bytes(value)
+      builder.write_{{ canonical_type_name }}(value)
       return builder.finalize
     end
   end
 
-  def consumeIntoBytes
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.readBytes
+      return stream.read{{ canonical_type_name }}
     end
   end
 
@@ -104,7 +104,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -118,7 +118,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -141,7 +141,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -176,7 +176,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -191,8 +191,8 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  # Enum used as error - generate consumeInto for use as a return value
-  def consumeInto{{ canonical_type_name }}
+  # Enum used as error - generate consume_into_ for use as a return value
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -215,7 +215,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -237,7 +237,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
@@ -259,19 +259,19 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end
   end
 
-  {% when Type::Map { key_type: k, value_type: inner_type } -%}
-  # The Map<T> type for {{ self::canonical_name(inner_type) }}.
+  {% when Type::Map { key_type: k, value_type: v } %}
+  # The Map<T> type for {{ canonical_type_name }}.
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |k, v|
       {{ "k"|check_lower_rb(k.borrow(), config) }}
-      {{ "v"|check_lower_rb(inner_type.borrow(), config) }}
+      {{ "v"|check_lower_rb(v.borrow(), config) }}
     end
   end
 
@@ -282,7 +282,7 @@ class RustBuffer < FFI::Struct
     end
   end
 
-  def consumeInto{{ canonical_type_name }}
+  def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
       return stream.read{{ canonical_type_name }}
     end

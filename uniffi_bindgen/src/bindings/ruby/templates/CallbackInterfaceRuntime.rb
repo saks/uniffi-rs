@@ -12,21 +12,8 @@ class CallbackInterfaceFfiConverter
     @handle_map.get handle
   end
 
-  def read(buf)
-    handle = buf.readU64
-    lift handle
-  end
-
-  def check_lower(_cb)
-    # Duck typing - any object with right methods will do.
-  end
-
   def lower(cb)
     @handle_map.insert cb
-  end
-
-  def write(cb, buf)
-    buf.writeU64 lower cb
   end
 end
 

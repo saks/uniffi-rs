@@ -159,6 +159,10 @@ impl<'a> RubyWrapper<'a> {
     }
 }
 
+fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
+    Ok(nm.to_string().to_upper_camel_case())
+}
+
 mod filters {
     use super::*;
 
@@ -327,10 +331,6 @@ mod filters {
         class_name_rb_inner(nm)
     }
 
-    fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
-        Ok(nm.to_string().to_upper_camel_case())
-    }
-
     #[askama::filter_fn]
     pub fn fn_name_rb(nm: &str, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(nm.to_string().to_snake_case())
@@ -410,9 +410,12 @@ mod filters {
                     format!("{nm}.map {{ |v| {coerce_code} }}.to_set")
                 }
             }
-            Type::Map { value_type: t, .. } => {
-                let k_coerce_code = coerce_rb_inner("k", ns, &Type::String, custom_types)?;
-                let v_coerce_code = coerce_rb_inner("v", ns, t, custom_types)?;
+            Type::Map {
+                key_type: kt,
+                value_type: vt,
+            } => {
+                let k_coerce_code = coerce_rb_inner("k", ns, kt, custom_types)?;
+                let v_coerce_code = coerce_rb_inner("v", ns, vt, custom_types)?;
 
                 if k_coerce_code == "k" && v_coerce_code == "v" {
                     nm.to_string()
@@ -452,11 +455,9 @@ mod filters {
             | Type::Optional { .. }
             | Type::Sequence { .. }
             | Type::Set { .. }
-            | Type::Map { .. } => format!(
-                "RustBuffer.check_lower_{}({})",
-                class_name_rb_inner(&canonical_name(type_))?,
-                nm
-            ),
+            | Type::Map { .. } => {
+                format!("RustBuffer.check_lower_{}({})", canonical_name(type_), nm)
+            }
             Type::Custom { name, .. } => {
                 if let Some(cfg) = config.custom_types.get(name) {
                     if let Some(type_name) = &cfg.type_name {
@@ -520,8 +521,6 @@ mod filters {
             | Type::Float32
             | Type::Float64 => nm.to_string(),
             Type::Boolean => format!("({nm} ? 1 : 0)"),
-            Type::String => format!("RustBuffer.allocFromString({nm})"),
-            Type::Bytes => format!("RustBuffer.allocFromBytes({nm})"),
             Type::Object { name, .. } => {
                 format!("({}.uniffi_lower {nm})", class_name_rb_inner(name)?)
             }
@@ -538,12 +537,12 @@ mod filters {
             | Type::Sequence { .. }
             | Type::Set { .. }
             | Type::Timestamp
+            | Type::String
+            | Type::Bytes
             | Type::Duration
-            | Type::Map { .. } => format!(
-                "RustBuffer.alloc_from_{}({})",
-                class_name_rb_inner(&canonical_name(type_))?,
-                nm
-            ),
+            | Type::Map { .. } => {
+                format!("RustBuffer.alloc_from_{}({})", canonical_name(type_), nm)
+            }
             Type::Box { .. } => unreachable!(),
             Type::Custom { .. } => unreachable!("Custom types should be handled before dispatch"),
         })
@@ -607,8 +606,6 @@ mod filters {
             | Type::UInt64 => format!("{nm}.to_i"),
             Type::Float32 | Type::Float64 => format!("{nm}.to_f"),
             Type::Boolean => format!("1 == {nm}"),
-            Type::String => format!("{nm}.consumeIntoString"),
-            Type::Bytes => format!("{nm}.consumeIntoBytes"),
             Type::Object { name, .. } => {
                 format!("{}.uniffi_lift({nm})", class_name_rb_inner(name)?)
             }
@@ -620,8 +617,7 @@ mod filters {
             }
             Type::Enum { .. } => {
                 format!(
-                    "{}.consumeInto{}",
-                    nm,
+                    "{nm}.consume_into_{}",
                     class_name_rb_inner(&canonical_name(type_))?
                 )
             }
@@ -630,12 +626,10 @@ mod filters {
             | Type::Sequence { .. }
             | Type::Set { .. }
             | Type::Timestamp
+            | Type::String
+            | Type::Bytes
             | Type::Duration
-            | Type::Map { .. } => format!(
-                "{}.consumeInto{}",
-                nm,
-                class_name_rb_inner(&canonical_name(type_))?
-            ),
+            | Type::Map { .. } => format!("{nm}.consume_into_{}", canonical_name(type_)),
             Type::Box { .. } => unreachable!(),
             Type::Custom { name, builtin, .. } => {
                 let lifted = lift_rb_inner(nm, builtin, custom_types)?;
@@ -717,6 +711,24 @@ mod test_type {
             }),
             "OptionalSequenceTypeExample"
         );
+
+        let map = Type::Map {
+            key_type: Box::new(Type::UInt32),
+            value_type: Box::new(Type::UInt32),
+        };
+        assert_eq!(canonical_name(&map), "MapU32U32");
+        assert_eq!(
+            canonical_name(&Type::Enum {
+                module_path: "foo".to_string(),
+                name: "HTMLError".to_string()
+            }),
+            "TypeHTMLError"
+        );
+    }
+
+    #[test]
+    fn test_class_name() {
+        assert_eq!(class_name_rb_inner("Example").unwrap(), "Example");
     }
 }
 

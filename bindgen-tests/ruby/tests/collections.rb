@@ -30,6 +30,21 @@ class TestCollections < Test::Unit::TestCase
 
     assert_equal map, UniffiBindgenTests.roundtrip_hash_map(map)
     assert_equal({}, UniffiBindgenTests.roundtrip_hash_map({}))
+
+    assert_equal(
+      { 1 => 2, 2 => 4 }, 
+      UniffiBindgenTests.roundtrip_hash_map_u32_key({ 1 => 2, 2 => 4 })
+    )
+  end
+
+  def test_hash_set
+    set = Set.new(['a', 'b', 'c'])
+
+    assert_equal set, UniffiBindgenTests.roundtrip_hash_set(set)
+    assert_equal(Set.new([]), UniffiBindgenTests.roundtrip_hash_set(Set.new([])))
+
+    assert_equal [Set.new(['a', 'b', 'c'])], UniffiBindgenTests.roundtrip_vec_hash_set([set])
+    assert_equal nil, UniffiBindgenTests.roundtrip_vec_hash_set(nil)
   end
 
   def test_rec_with_collections

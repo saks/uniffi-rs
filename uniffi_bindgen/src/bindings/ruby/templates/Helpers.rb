@@ -29,7 +29,7 @@ def self.uniffi_trait_interface_call(call_status, make_call, write_return_value)
     write_return_value.call make_call.call
   rescue => e
     call_status[:code] = UNIFFI_CALLBACK_UNEXPECTED_ERROR
-    buf = RustBuffer.allocateFromString e.to_s
+    buf = {{ "e.inspect"|lower_rb(&Type::String, config) }}
     error_buf = call_status[:error_buf]
     error_buf[:capacity] = buf[:capacity]
     error_buf[:len] = buf[:len]
@@ -52,7 +52,7 @@ def self.uniffi_trait_interface_call_with_error(call_status, make_call, write_re
       error_buf[:data] = buf[:data]
     else
       call_status[:code] = UNIFFI_CALLBACK_UNEXPECTED_ERROR
-      buf = RustBuffer.allocFromString "#<#{e.class.name}: #{e.message}>"
+      buf = {{ "e.inspect"|lower_rb(&Type::String, config) }}
       error_buf = call_status[:error_buf]
       error_buf[:capacity] = buf[:capacity]
       error_buf[:len] = buf[:len]
