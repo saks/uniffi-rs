@@ -84,12 +84,12 @@ end
 ERROR_MODULE_TO_READER_METHOD = {
 {% for e in ci.enum_definitions() %}
 {%- if ci.is_name_used_as_error(e.name()) -%}
-  {{ e.name()|class_name_rb }} => :read{{ self::canonical_name(e.as_type().borrow()) }},
+  {{ e.name()|class_name_rb }} => :read_{{ self::canonical_name(e.as_type().borrow()) }},
 {% endif %}
 {%- endfor -%}
 {% for obj in ci.object_definitions() %}
 {%- if ci.is_name_used_as_error(obj.name()) -%}
-  '{{ obj.name()|class_name_rb }}' => :read{{ self::canonical_name(obj.as_type().borrow()) }},
+  '{{ obj.name()|class_name_rb }}' => :read_{{ self::canonical_name(obj.as_type().borrow()) }},
 {% endif %}
 {%- endfor -%}
 }

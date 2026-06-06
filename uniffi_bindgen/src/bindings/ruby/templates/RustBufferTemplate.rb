@@ -92,7 +92,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -106,7 +106,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -120,7 +120,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -143,7 +143,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -178,7 +178,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
   {% else %}
@@ -194,7 +194,7 @@ class RustBuffer < FFI::Struct
   # Enum used as error - generate consume_into_ for use as a return value
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
   {% endif %}
@@ -217,7 +217,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -239,7 +239,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -261,7 +261,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
@@ -284,7 +284,7 @@ class RustBuffer < FFI::Struct
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read{{ canonical_type_name }}
+      return stream.read_{{ canonical_type_name }}
     end
   end
 
