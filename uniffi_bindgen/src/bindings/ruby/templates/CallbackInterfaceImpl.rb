@@ -17,7 +17,7 @@ module UniffiCallbackInterface{{ cbi_name|class_name_rb }}
 
   # Callback method for {{ method.name() }}
   {{ method.name()|enum_name_rb }}_CALLBACK = Proc.new do |uniffi_handle, {%- for arg in method.arguments() %} {{ arg.name()|var_name_rb }},{% endfor %} uniffi_out_return, uniffi_call_status|
-    uniffi_obj = CallbackInterface{{ cbi_name|class_name_rb }}FfiConverter.lift uniffi_handle
+    uniffi_obj = {{ self::canonical_name(cbi.as_type().borrow()) }}FfiConverter.lift uniffi_handle
 
     make_call = Proc.new do
       uniffi_obj.{{ method.name()|fn_name_rb }}(
@@ -106,12 +106,12 @@ module UniffiCallbackInterface{{ cbi_name|class_name_rb }}
 
   # Free callback: removes the handle from the map.
   UNIFFI_FREE_CALLBACK = Proc.new do |uniffi_handle|
-    CallbackInterface{{ cbi_name|class_name_rb }}FfiConverter.handle_map.remove uniffi_handle
+    {{ self::canonical_name(cbi.as_type().borrow()) }}FfiConverter.handle_map.remove uniffi_handle
   end
 
   # Clone callback: clones the handle in the map.
   UNIFFI_CLONE_CALLBACK = Proc.new do |uniffi_handle|
-    CallbackInterface{{ cbi_name|class_name_rb }}FfiConverter.handle_map.clone_handle uniffi_handle
+    {{ self::canonical_name(cbi.as_type().borrow()) }}FfiConverter.handle_map.clone_handle uniffi_handle
   end
 
   # Create the VTable struct instance.

@@ -381,13 +381,17 @@ mod filters {
             Type::UInt16 => format!("::{ns}::uniffi_in_range({nm}, \"u16\", 0, 2**16)"),
             Type::UInt32 => format!("::{ns}::uniffi_in_range({nm}, \"u32\", 0, 2**32)"),
             Type::UInt64 => format!("::{ns}::uniffi_in_range({nm}, \"u64\", 0, 2**64)"),
-            Type::Float32 | Type::Float64 => nm.to_string(),
+            Type::Float32
+            | Type::Float64
+            | Type::Object { .. }
+            | Type::Enum { .. }
+            | Type::Record { .. }
+            | Type::Timestamp
+            | Type::Duration
+            | Type::CallbackInterface { .. } => nm.to_string(),
             Type::Boolean => format!("{nm} ? true : false"),
-            Type::Object { .. } | Type::Enum { .. } | Type::Record { .. } => nm.to_string(),
             Type::String => format!("::{ns}::uniffi_utf8({nm})"),
             Type::Bytes => format!("::{ns}::uniffi_bytes({nm})"),
-            Type::Timestamp | Type::Duration => nm.to_string(),
-            Type::CallbackInterface { .. } => nm.to_string(),
             Type::Optional { inner_type: t } => {
                 format!(
                     "({nm} ? {} : nil)",

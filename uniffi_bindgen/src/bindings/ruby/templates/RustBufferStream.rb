@@ -335,7 +335,7 @@ class RustBufferStream
   # The CallbackInterface type {{ name }}: read a uint64 handle.
   def read{{ canonical_type_name }}
     handle = unpack_from 8, 'Q>'
-    CallbackInterface{{ name|class_name_rb }}FfiConverter.lift handle
+    {{ self::canonical_name(typ) }}FfiConverter.lift handle
   end
 
   {%- else -%}

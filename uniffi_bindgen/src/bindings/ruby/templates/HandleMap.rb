@@ -51,10 +51,6 @@ class UniffiHandleMap
       obj
     end
   end
-
-  def size
-    @lock.synchronize { @map.size }
-  end
 end
 
 private_constant :UniffiHandleMap

@@ -11,6 +11,6 @@ class {{ interface_name }}
 end
 
 # The FfiConverter for the {{ name }} callback interface.
-CallbackInterface{{ name|class_name_rb }}FfiConverter = CallbackInterfaceFfiConverter.new
+{{ self::canonical_name(cbi.as_type().borrow()) }}FfiConverter = CallbackInterfaceFfiConverter.new
 
 {% include "CallbackInterfaceImpl.rb" %}

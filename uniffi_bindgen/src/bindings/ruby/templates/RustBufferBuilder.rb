@@ -299,7 +299,7 @@ class RustBufferBuilder
   {% when Type::CallbackInterface { name, .. } -%}
   # The CallbackInterface type {{ name }}: write a uint64 handle.
   def write_{{ canonical_type_name }}(v)
-    handle = CallbackInterface{{ name|class_name_rb }}FfiConverter.lower(v)
+    handle = {{ self::canonical_name(typ) }}FfiConverter.lower(v)
     pack_into 8, 'Q>', handle
   end
 
