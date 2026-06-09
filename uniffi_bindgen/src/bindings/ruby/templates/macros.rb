@@ -64,6 +64,30 @@ values[{{- field_num - 1 -}}]
 )
 {%- endmacro -%}
 
+{%- macro to_ffi_call_with_lower_self(func) -%}
+    {%- match func.throws_type() -%}
+    {%- when Some(Type::Custom { builtin, .. }) -%}
+      {%- match builtin.borrow() -%}
+      {%- when Type::Enum { name, .. } -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+      {%- when Type::Object { name, .. } -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+      {%- else -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call
+      {%- endmatch -%}
+    {%- when Some(Type::Enum { name, .. }) -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+    {%- when Some(Type::Object { name, .. }) -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
+    {%- else -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call(
+    {%- endmatch -%}
+    :{{ func.ffi_func().name() }},
+    {{ func|lower_method_self_rb(config) }},
+    {%- call _arg_list_ffi_call(func) %}{% endcall -%}
+)
+{%- endmacro -%}
+
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
         {{- arg.name()|var_name_rb|lower_rb(arg.as_type().borrow(), config) }}

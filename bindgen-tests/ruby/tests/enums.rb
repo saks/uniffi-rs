@@ -43,13 +43,18 @@ class TestEnums < Test::Unit::TestCase
     )
   end
 
-  # TODO: implement enum methods
-  # def test_methods
-  #   assert_equal(
-  #     EnumWithData::A.new(value: 1, value2: 0).roundtrip(), 
-  #     EnumWithData::A.new(value: 1, value2: 0)
-  #   )
-  # end
+  def test_methods
+    assert_equal(
+      EnumWithData::A.new(value: 1, value2: 0),
+      EnumWithData::A.new(value: 1, value2: 0).roundtrip
+    )
+
+    result = EnumWithData::B.new('hello', 42).roundtrip
+
+    assert_kind_of EnumWithData::B, result
+    assert_equal 'hello', result[0]
+    assert_equal 42, result[1]
+  end
 
   # --- ComplexEnum ---
 
