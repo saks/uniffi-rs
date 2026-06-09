@@ -129,6 +129,20 @@ class TestTraitInterfaces < Test::Unit::TestCase
 
   def test_rb_impl
     check_rb_impl(TraitImpl.new(42))
+    GC.start
+
+    assert_equal 0, TraitImpl.ref_count
+  end
+
+  def test_rb_impl_roundtripped_list
+    impl = UniffiBindgenTests.roundtrip_test_trait_interface_list([TraitImpl.new(42)])[0]
+    check_rb_impl(impl)
+    # rubocop:disable Lint/UselessAssignment
+    impl = nil
+    # rubocop:enable Lint/UselessAssignment
+    GC.start
+
+    assert_equal 0, TraitImpl.ref_count
   end
 
   def test_rb_impl_roundtripped
@@ -138,6 +152,7 @@ class TestTraitInterfaces < Test::Unit::TestCase
     impl = nil
     # rubocop:enable Lint/UselessAssignment
     GC.start
+
     assert_equal 0, TraitImpl.ref_count
   end
 end
@@ -149,9 +164,53 @@ class TestRustOnlyTraitInterfaces < Test::Unit::TestCase
     assert_raises(TestError::Failure1) do
       impl.throw_if_equal(CallbackInterfaceNumbers.new(a: 10, b: 10))
     end
+
+    assert_equal(
+      impl.throw_if_equal(CallbackInterfaceNumbers.new(a: 10, b: 11)),
+      CallbackInterfaceNumbers.new(a: 10, b: 11)
+    )
   end
 
   def test_rust_only_impl
     check_rust_only_impl UniffiBindgenTests.create_rust_only_test_trait_interface
+  end
+end
+
+class TestFireignOnlyTraitInterfaces < Test::Unit::TestCase
+  include UniffiBindgenTests
+
+  class ForeignOnlyImpl < TestForeignOnlyTraitInterface
+    include UniffiBindgenTests
+
+    def throw_if_equal(numbers)
+      raise TestError::Failure1 if numbers.a == numbers.b
+
+      numbers
+    end
+  end
+
+  def check_foreign_only_impl(impl)
+    assert_raises(TestError::Failure1) do
+      UniffiBindgenTests.invoke_test_foreign_only_trait_throw_if_equal(
+        impl,
+        CallbackInterfaceNumbers.new(a: 10, b: 10)
+      )
+    end
+
+    assert_equal(
+      UniffiBindgenTests.invoke_test_foreign_only_trait_throw_if_equal(
+        impl,
+        CallbackInterfaceNumbers.new(a: 10, b: 11)
+      ),
+      CallbackInterfaceNumbers.new(a: 10, b: 11)
+    )
+  end
+
+  def test_foreign_only_impl
+    check_foreign_only_impl ForeignOnlyImpl.new
+  end
+
+  def test_foreign_only_impl_roundtripped
+    check_foreign_only_impl UniffiBindgenTests.roundtrip_test_foreign_only_trait(ForeignOnlyImpl.new)
   end
 end

@@ -24,30 +24,23 @@ class TestEnums < Test::Unit::TestCase
   end
 
   # --- EnumWithData (non-flat enum) ---
-  def test_enum_with_data_named_variant
-    en = EnumWithData::A.new value: 10, value2: 20
-    result = UniffiBindgenTests.roundtrip_enum_with_data(en)
+  def test_enums_with_data
+    assert_equal(
+      UniffiBindgenTests.roundtrip_complex_enum(ComplexEnum::A.new(value: EnumNoData::C)),
+      ComplexEnum::A.new(value: EnumNoData::C)
+    )
 
-    assert_kind_of EnumWithData::A, result
-    assert_equal 10, result.value
-    assert_equal 20, result.value2
-  end
+    assert_equal(
+      UniffiBindgenTests.roundtrip_complex_enum(
+        ComplexEnum::B.new(value: EnumWithData::A.new(value: 20, value2: 40))
+      ),
+      ComplexEnum::B.new(value: EnumWithData::A.new(value: 20, value2: 40))
+    )
 
-  def test_enum_with_data_tuple_variant
-    en = EnumWithData::B.new 'hello', 42
-    result = UniffiBindgenTests.roundtrip_enum_with_data(en)
-
-    assert_kind_of EnumWithData::B, result
-    assert_equal 'hello', result[0]
-    assert_equal 42, result[1]
-  end
-
-  def test_enum_with_data_empty_variant
-    # C has no data but lives is a non-flat enum - still a class
-    en = EnumWithData::C.new
-    result = UniffiBindgenTests.roundtrip_enum_with_data(en)
-
-    assert_kind_of EnumWithData::C, result
+    assert_equal(
+      UniffiBindgenTests.roundtrip_complex_enum(ComplexEnum::C.new(value: SimpleRec.new(a: 30))),
+      ComplexEnum::C.new(value: SimpleRec.new(a: 30))
+    )
   end
 
   # TODO: implement enum methods
@@ -65,6 +58,8 @@ class TestEnums < Test::Unit::TestCase
     en = ComplexEnum::A.new value: inner
     result = UniffiBindgenTests.roundtrip_complex_enum(en)
 
+    assert_equal en, result
+
     assert_kind_of ComplexEnum::A, result
     assert_equal EnumNoData::C, result.value
   end
@@ -73,6 +68,8 @@ class TestEnums < Test::Unit::TestCase
     inner = EnumWithData::A.new value: 5, value2: 6
     en = ComplexEnum::B.new value: inner
     result = UniffiBindgenTests.roundtrip_complex_enum(en)
+
+    assert_equal en, result
 
     assert_kind_of ComplexEnum::B, result
     assert_kind_of EnumWithData::A, result.value
@@ -84,6 +81,8 @@ class TestEnums < Test::Unit::TestCase
     inner = SimpleRec.new a: 77
     en = ComplexEnum::C.new value: inner
     result = UniffiBindgenTests.roundtrip_complex_enum(en)
+
+    assert_equal en, result
 
     assert_kind_of ComplexEnum::C, result
     assert_kind_of SimpleRec, result.value

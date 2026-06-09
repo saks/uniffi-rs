@@ -16,6 +16,10 @@ class CallbackImpl
     @@callback_ref_count
   end
 
+  def self.reset_callback_ref_count
+    @@callback_ref_count = 0
+  end
+
   def self.finalizer
     proc { @@callback_ref_count -= 1 }
   end
@@ -54,23 +58,22 @@ end
 class TestCallbackInterfaces < Test::Unit::TestCase
   include UniffiBindgenTests
 
-  def test_noop
-    cbi = CallbackImpl.new 0
-
-    UniffiBindgenTests.invoke_test_callback_interface_noop(cbi)
-  end
-
-  def test_get_value
+  def test_callback_interface
+    # Construct a callback interface to pass to rust
+    CallbackImpl.reset_callback_ref_count
     cbi = CallbackImpl.new 42
 
+    # Test calling callback interface methods, which we can only do indirectly.
+    # Each of these Rust functions inputs a callback interface, calls a method on it, then returns the result.
+    UniffiBindgenTests.invoke_test_callback_interface_noop cbi
     assert_equal 42, UniffiBindgenTests.invoke_test_callback_interface_get_value(cbi)
-  end
-
-  def test_set_value
-    cbi = CallbackImpl.new 0
-
-    UniffiBindgenTests.invoke_test_callback_interface_set_value(cbi, 43)
+    UniffiBindgenTests.invoke_test_callback_interface_set_value cbi, 43
     assert_equal 43, UniffiBindgenTests.invoke_test_callback_interface_get_value(cbi)
+    assert_equal 'test-string', UniffiBindgenTests.invoke_test_callback_interface_echo(cbi, 'test-string')
+
+    # The previous calls created a bunch of callback interface references.  Make sure they've been cleaned
+    # up and the only remaining reference is for our `cbi` variable.
+    assert_equal 1, CallbackImpl.callback_ref_count
   end
 
   def test_echo
@@ -114,6 +117,7 @@ class TestCallbackInterfaces < Test::Unit::TestCase
   end
 
   def test_callback_interface_calls_and_errors
+    CallbackImpl.reset_callback_ref_count
     cbi = CallbackImpl.new(42)
 
     # Only our local Ruby reference should remain alive.

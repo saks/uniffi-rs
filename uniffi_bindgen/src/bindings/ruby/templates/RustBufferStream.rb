@@ -155,7 +155,7 @@ class RustBufferStream
 
   def read_{{ canonical_type_name }}
     handle = unpack_from 8, 'Q>'
-    return {{ object_name|class_name_rb }}.uniffi_allocate(handle)
+    return {{ object_name|class_name_rb }}.uniffi_lift(handle)
   end
 
   {% when Type::Enum { name, .. } -%}
