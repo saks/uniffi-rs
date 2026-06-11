@@ -9,7 +9,7 @@ UNIFFI_ASYNC_HANDLE_MAP = UniffiHandleMap.new
 # Called by Rust when the future is ready to make progress.
 # Writes the poll code to the pipe so the waiting thread/fiber can continue.
 UNIFFI_CONTINUATION_CALLBACK = Proc.new do |data, poll_code|
-  wr = UNIFFI_ASYNC_HANDLE_MAP.remove(data)
+  wr = UNIFFI_ASYNC_HANDLE_MAP.remove(data) rescue nil # never raise from FFI callback
   next unless wr # guard against concurrent cancellation cleanup already removing the handle
   wr.write([poll_code].pack('C'))
   wr.close
@@ -74,7 +74,10 @@ end
 
 {%- if ci.has_async_callback_interface_definition() %}
 # Exception raised when a foreign future is canceled.
-class UniffiCancelled < RuntimeError; end
+class UniffiInternalCancelled < RuntimeError; end
+
+# User callback that raises it will be considered a Rust-side cancellation.
+private_constant :UniffiInternalCancelled
 
 # Handle map for storing Threads executing foreign async callbacks.
 UNIFFI_FOREIGN_FUTURE_HANDLE_MAP = UniffiHandleMap.new
@@ -104,23 +107,23 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
   once = UniffiOnceFlag.new
 
   # Called by Rust when the foreign future is dropped (i.e. canceled).
-  # Raises UniffiCancelled in the worker thread so make_call can exit early,
+  # Raises UniffiInternalCancelled in the worker thread so make_call can exit early,
   # but only if the thread hasn't already completed and claimed the once flag.
   dropped_callback = Proc.new do |handle|
     thread = UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.remove handle
-    thread.raise(UniffiCancelled, 'Future was canceled') if once.claim! && thread&.alive?
+    thread.raise(UniffiInternalCancelled, 'Future was canceled') if once.claim! && thread&.alive?
   end
 
   thread = Thread.new do
     # Phase 1: run the user's async method.
-    # UniffiCancelled exits silently. Other exceptions are forwarded as errors.
+    # UniffiInternalCancelled exits silently. Other exceptions are forwarded as errors.
     # handle_success is intentionally called outside this rescue so exceptions from it
     # cannot re-enter handle_error (which would be a double-call on the Rust sender).
     begin
       result = make_call.call
-    rescue UniffiCancelled
+    rescue UniffiInternalCancelled
       next
-    rescue Exception => e
+    rescue StandardError => e
       next unless once.claim!
       if !error_type.nil? && ::{{ ci.namespace()|class_name_rb }}.uniffi_is_error_type?(e, error_type)
         handle_error.call(UNIFFI_CALLBACK_ERROR, lower_error.call(e))
@@ -131,7 +134,12 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
     end
 
     # Phase 2: deliver the result to Rust. Skipped if dropped_callback already fired.
-    handle_success.call(result) if once.claim!
+    begin
+      handle_success.call(result) if once.claim!
+    rescue UniffiInternalCancelled
+      # Thread#raise landed after Phase 1 - silently exit.
+      next 
+    end
   end
 
   handle = UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.insert(thread)

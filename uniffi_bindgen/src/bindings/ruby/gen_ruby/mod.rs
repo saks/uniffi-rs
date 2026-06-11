@@ -238,7 +238,7 @@ mod filters {
             | FfiType::Handle => "0".to_string(),
             FfiType::Float32 | FfiType::Float64 => "0.0".to_string(),
             FfiType::RustBuffer(_) => "RustBuffer.new".to_string(),
-            _ => "0".to_string(),
+            _ => panic!("Unsupported FFI return type for callback: {ffi_type:?}"),
         })
     }
 
