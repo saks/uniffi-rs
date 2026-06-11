@@ -88,17 +88,17 @@ class TestFutures < Test::Unit::TestCase
 
     assert_raises(TestError::Failure1) do
       UniffiBindgenTests.invoke_test_async_callback_interface_throw_if_equal(
-        cbi, 
+        cbi,
         CallbackInterfaceNumbers.new(a: 10, b: 10)
       )
     end
-    
+
     assert_equal(
-      CallbackInterfaceNumbers.new(a: 10, b: 11), 
+      CallbackInterfaceNumbers.new(a: 10, b: 11),
       UniffiBindgenTests.invoke_test_async_callback_interface_throw_if_equal(
-        cbi, 
+        cbi,
         CallbackInterfaceNumbers.new(a: 10, b: 11)
       )
     )
-  end
+ end
 end

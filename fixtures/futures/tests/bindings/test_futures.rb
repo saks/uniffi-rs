@@ -135,6 +135,7 @@ class TestFutures < Test::Unit::TestCase
 
     # check that all foreign future handles were released
     assert_equal Futures::UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.size, 0
+    assert_equal Futures::UNIFFI_ASYNC_HANDLE_MAP.size, 0
   end
 
   def test_async_object_param
@@ -220,6 +221,7 @@ class TestFutures < Test::Unit::TestCase
 
     # No leaked pipe handles
     assert_equal Futures::UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.size, 0
+    assert_equal Futures::UNIFFI_ASYNC_HANDLE_MAP.size, 0
   end
 
   # --- Fiber::Scheduler tests ---
@@ -391,8 +393,3 @@ class TestFutures < Test::Unit::TestCase
     end
   end
 end
-
-#
-# if __name__ == '__main__':
-#     unittest.main()
-#
