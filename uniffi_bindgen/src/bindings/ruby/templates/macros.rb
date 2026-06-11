@@ -113,6 +113,7 @@ values[{{- field_num - 1 -}}]
         {%- call _arg_list_ffi_call(func) %}{% endcall -%}
       ),
       :{{ func.ffi_rust_future_poll(ci) }},
+      :{{ func.ffi_rust_future_cancel(ci) }},
       :{{ func.ffi_rust_future_complete(ci) }},
       :{{ func.ffi_rust_future_free(ci) }},
       {%- match func.return_type() %}
@@ -132,6 +133,7 @@ values[{{- field_num - 1 -}}]
         {%- call _arg_list_ffi_call(func) %}{% endcall -%}
       ),
       :{{ func.ffi_rust_future_poll(ci) }},
+      :{{ func.ffi_rust_future_cancel(ci) }},
       :{{ func.ffi_rust_future_complete(ci) }},
       :{{ func.ffi_rust_future_free(ci) }},
       Proc.new { |v| v },

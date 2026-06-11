@@ -10,6 +10,7 @@ UNIFFI_ASYNC_HANDLE_MAP = UniffiHandleMap.new
 # Writes the poll code to the pipe so the waiting thread/fiber can continue.
 UNIFFI_CONTINUATION_CALLBACK = Proc.new do |data, poll_code|
   wr = UNIFFI_ASYNC_HANDLE_MAP.remove(data)
+  next unless wr # guard against concurrent cancellation cleanup already removing the handle
   wr.write([poll_code].pack('C'))
   wr.close
 end
@@ -21,11 +22,20 @@ end
 #   so the callback can fire from foreign threads (works around MRI limitation
 #   where rb_thread_call_with_gvl cannot wake up threads in indefinite sleep).
 # - With scheduler: wait_readable hooks into io_wait, yielding the fiber.
-def self.uniffi_rust_call_async(rust_future, poll_fn, complete_fn, free_fn, lift_func, error_ffi_converter)
+#
+# cancel_fn is called in the ensure block when exception interrupts an in-flight poll.
+# This guarantees Rust fires the continuation callback so the handle-map entry is released
+# and the pipe is drained before we free the future.
+def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, free_fn, lift_func, error_ffi_converter)
+  current_rd = nil
+  current_handle = nil
+
   begin
     loop do
       rd, wr = IO.pipe
       handle = UNIFFI_ASYNC_HANDLE_MAP.insert(wr)
+      current_rd = rd
+      current_handle = handle
       UniFFILib.public_send(poll_fn, rust_future, UNIFFI_CONTINUATION_CALLBACK, handle)
 
       # wait_readable with a timeout ensures periodic thread wakeups and maps cleanly to
@@ -33,6 +43,8 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, complete_fn, free_fn, lift
       nil until rd.wait_readable(0.01)
       poll_code = rd.read(1).unpack1('C')
       rd.close
+      current_rd = nil
+      current_handle = nil
 
       break if poll_code == UNIFFI_RUST_FUTURE_POLL_READY
     end
@@ -45,6 +57,17 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, complete_fn, free_fn, lift
 
     lift_func.call(result)
   ensure
+    if current_handle
+      # An exception interrupted an in-flight poll. This prevents handle-map entry leaks.
+      UniFFILib.public_send(cancel_fn, rust_future)
+      # Wait up to 0.5s for the continuation to fire, then drain the pipe.
+      current_rd.wait_readable(0.5) rescue nil
+      current_rd.close rescue nil
+      # Safety net: if the callback somehow never fired, remove the entry manually.
+      if (leftover_wr = UNIFFI_ASYNC_HANDLE_MAP.remove(current_handle) rescue nil)
+        leftover_wr.close rescue nil
+      end
+    end
     UniFFILib.public_send(free_fn, rust_future)
   end
 end
@@ -73,7 +96,7 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
       handle_success.call(result)
     rescue UniffiCancelled
       # Future was canceled, do nothing (Rust already dropped the future).
-    rescue StandardError => e
+    rescue Exception => e
       if !error_type.nil? && ::{{ ci.namespace()|class_name_rb }}.uniffi_is_error_type?(e, error_type)
         handle_error.call(UNIFFI_CALLBACK_ERROR, lower_error.call(e))
       else

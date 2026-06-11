@@ -134,7 +134,7 @@ class TestFutures < Test::Unit::TestCase
     assert_equal trait_obj.completed_delays, completed_delays_before
 
     # check that all foreign future handles were released
-    assert_equal Futures::UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.instance_variable_get(:@map).size, 0
+    assert_equal Futures::UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.size, 0
   end
 
   def test_async_object_param
@@ -191,40 +191,40 @@ class TestFutures < Test::Unit::TestCase
   end
 
   # Test a future that uses a lock and that is cancelled.
-  # TODO: implement this with Fibers
   def test_shared_resource_cancellation
-    # async def test():
-    #     task = asyncio.create_task(use_shared_resource(
-    #         SharedResourceOptions(release_after_ms=5000, timeout_ms=100)))
-    #     # Wait some time to ensure the task has locked the shared resource
-    #     await asyncio.sleep(0.05)
-    #     task.cancel()
-    #     await use_shared_resource(SharedResourceOptions(release_after_ms=0, timeout_ms=1000))
-    # asyncio.run(test())
+    thread = Thread.new do
+      Futures.use_shared_resource(
+        Futures::SharedResourceOptions.new(release_after_ms: 5000, timeout_ms: 100)
+      )
+    end
+
+    thread.report_on_exception = false
+    sleep 0.05 # let the thread acquire the Tokio mutext
+    thread.raise # cancel - drops the Rust future, releasing the mutex guard
+    thread.join rescue nil
+
+    # If cancellation freed the future correctly, the mutext is released and this succeeds
+    Futures.use_shared_resource(
+      Futures::SharedResourceOptions.new(release_after_ms: 0, timeout_ms: 1000)
+    )
   end
 
-  # TODO: implement this with Fibers
   def test_cancel
-    # Python example:
-    # async def test():
-    #     # Create a task
-    #     task = asyncio.create_task(say_after(200, 'Alice'))
-    #     # Wait to ensure that the polling has started, then cancel the task
-    #     await asyncio.sleep(0.1)
-    #     task.cancel()
-    #     # Wait long enough for the Rust callback to fire.  This shouldn't cause an exception,
-    #     # even though the task is cancelled.
-    #     await asyncio.sleep(0.2)
-    #     # Awaiting the task should result in a CancelledError.
-    #     with self.assertRaises(asyncio.CancelledError):
-    #         await task
-    #
-    # asyncio.run(test())
+    thread = Thread.new { Futures.say_after 200, 'Alice' }
+    thread.report_on_exception = false
+    sleep 0.1 # let the poll loop start
+    thread.raise # interrupt wait_readable -> ensure fires cancel+free
+    thread.join rescue nil
+
+    assert !thread.alive?, 'Future was not canceled'
+
+    # No leaked pipe handles
+    assert_equal Futures::UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.size, 0
   end
 
   # --- Fiber::Scheduler tests ---
   # These verify that async calls work with Ruby's cooperative fiber concurrency,
-  # yielding the filber on IO wait and resuming when the Rust future completes.
+  # yielding the fiber on IO wait and resuming when the Rust future completes.
   def test_fiber_concurrent_tasks
     results = []
     t0 = now()
@@ -240,7 +240,7 @@ class TestFutures < Test::Unit::TestCase
     assert_include results, 'Hello, Alice!'
     assert_include results, 'Hello, Bob!'
 
-    # Both run concurrently on one thread - should ocmplete in ~200ms, not ~400ms
+    # Both run concurrently on one thread - should complete in ~200ms, not ~400ms
     assert_operator delta, :>=, 0.2
     assert_operator delta, :<, 0.4
   end
