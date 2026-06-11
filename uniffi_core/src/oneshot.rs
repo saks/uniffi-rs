@@ -36,9 +36,15 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
 impl<T> Sender<T> {
     /// Send a value to the receiver
     pub fn send(self, value: T) {
-        let mut inner = self.0.lock().unwrap();
-        inner.value = Some(value);
-        if let Some(waker) = inner.waker.take() {
+        let waker = {
+            let mut inner = self.0.lock().unwrap();
+            inner.value = Some(value);
+            inner.waker.take()
+        };
+        // Wake AFTER releasing the lock to prevent deadlocks when the waker's
+        // callback needs an external lock that may be held by a thread trying
+        // to poll the Receiver (which needs the same mutex).
+        if let Some(waker) = waker {
             waker.wake();
         }
     }
