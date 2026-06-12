@@ -13,34 +13,30 @@ class TestFutures < Test::Unit::TestCase
   end
 
   def test_sleep
-    t0 = now()
+    start = now()
     Futures.sleep 200
-    t1 = now()
 
-    t_delta = (t1 - t0)
-    assert_operator t_delta, :>=, 0.2
+    assert_in_delta 0.2, now - start, 0.1
   end
 
   def test_sequential_futures
-    t0 = now()
-    result_alice = Futures.say_after(100, 'Alice')
-    result_bob = Futures.say_after(200, 'Bob')
-    t1 = now()
+    start = now()
+    result_alice = Futures.say_after 100, 'Alice'
+    result_bob = Futures.say_after 200, 'Bob'
 
-    t_delta = (t1 - t0)
-    assert_operator t_delta, :>=, 0.3
+    assert_operator now - start, :>=, 0.3
     assert_equal result_alice, 'Hello, Alice!'
     assert_equal result_bob, 'Hello, Bob!'
   end
 
   def test_concurrent_tasks
-    t0 = now()
+    start = now()
     alice = Thread.new { Futures.say_after(100, 'Alice') }
     bob = Thread.new { Futures.say_after(200, 'Bob') }
     result_alice = alice.value
     result_bob = bob.value
 
-    delta = now() - t0
+    delta = now - start
 
     assert_operator delta, :>=, 0.2
     assert_operator delta, :<, 0.4
@@ -70,15 +66,13 @@ class TestFutures < Test::Unit::TestCase
 
   def test_async_trait_interface_methods
     traits = Futures.get_say_after_traits
-    t0 = now()
+    start = now()
     result1 = traits[0].say_after(100, 'Alice')
     result2 = traits[1].say_after(100, 'Bob')
-    t1 = now()
 
+    assert_operator now - start, :>=, 0.2
     assert_equal result1, 'Hello, Alice!'
     assert_equal result2, 'Hello, Bob!'
-    t_delta = (t1 - t0)
-    assert_operator t_delta, :>=, 0.2
   end
 
   def test_udl_async_trait_interface_methods
@@ -96,12 +90,13 @@ class TestFutures < Test::Unit::TestCase
 
   def test_tokio_async_trait_interface_methods
     traits = Futures.get_say_after_tokio_traits
-    t0 = now()
+
+    start = now()
+
     result1 = traits[0].say_after(100, 'Alice')
     result2 = traits[1].say_after(100, 'Bob')
-    t_delta = now - t0
 
-    assert_operator t_delta, :>=, 0.2
+    assert_operator now - start, :>=, 0.2
     assert_equal result1, 'Hello, Alice (with Tokio)!'
     assert_equal result2, 'Hello, Bob (with Tokio)!'
   end
