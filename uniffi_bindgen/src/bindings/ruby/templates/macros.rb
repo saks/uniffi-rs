@@ -57,11 +57,6 @@ values[{{- field_num - 1 -}}]
 )
 {%- endmacro -%}
 
-{#- Async variant of to_ffi_call_with_lower_self: lowers `self` via lower_method_self_rb. -#}
-{%- macro to_ffi_call_with_lower_self_async(func) -%}
-    {%- call to_ffi_call_with_prefix_async(func|lower_method_self_rb(config), func) %}{% endcall %}
-{%- endmacro -%}
-
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
         {{- arg.name()|var_name_rb|lower_rb(arg.as_type().borrow(), config) }}
