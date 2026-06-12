@@ -273,6 +273,17 @@ pub struct MyRecord {
 }
 
 #[uniffi::export]
+impl MyRecord {
+    pub async fn say(&self) -> String {
+        say_after(0, self.a.clone()).await
+    }
+
+    pub async fn add(&self, extra: u32) -> u32 {
+        self.b + extra
+    }
+}
+
+#[uniffi::export]
 pub async fn new_my_record(a: String, b: u32) -> MyRecord {
     MyRecord { a, b }
 }

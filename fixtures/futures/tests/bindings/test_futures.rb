@@ -178,6 +178,13 @@ class TestFutures < Test::Unit::TestCase
     assert_equal result.b, 42
   end
 
+  def test_record_async_methods
+    record = Futures.new_my_record 'Alice', 42
+
+    assert_equal 'Hello, Alice!', record.say
+    assert_equal 43, record.add(1)
+  end
+
   def test_greet
     assert_equal 'Hello, World', Futures.greet('World')
   end
