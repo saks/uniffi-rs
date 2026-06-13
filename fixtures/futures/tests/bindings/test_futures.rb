@@ -290,6 +290,7 @@ class TestFutures < Test::Unit::TestCase
     def initialize
       @readable = {}
       @waiting = []
+      @ready = []
     end
 
     def io_wait(io, events, _timeout = nil)
@@ -309,28 +310,47 @@ class TestFutures < Test::Unit::TestCase
     def unblock(blocker, fiber); end
 
     def fiber(&block)
-      f =  Fiber.new(blocking: false, &block)
+      f = Fiber.new(blocking: false, &block)
       f.resume
       f
     end
 
+    def fiber_interrupt(fiber, exception)
+      # 1. Pull the fiber out of any wait state to avoid double-resumption
+      @readable.delete_if { |_, f| f == fiber }
+      @waiting.delete_if { |f, _| f == fiber }
+
+      # 2. Queue it up to be interrupted in the main loop
+      @ready << [fiber, exception]
+    end
+
     def close
-      until @readable.empty? && @waiting.empty?
+      until @readable.empty? && @waiting.empty? && @ready.empty?
+
+        # 1. Process ready/interrupted fibers immediately
+        while (pair = @ready.shift)
+          f, exception = pair
+          # Raise the exception inside the fiber at the point it called Fiber.yield
+          f.raise(exception) if f.alive? 
+        end
+
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @waiting.select { |_, t| t < now }.each do |pair|
-          @waiting.delete pair
+          @waiting.delete(pair)
           pair[0].resume
         end
 
         rds = @readable.keys
 
-        break if rds.empty? && @waiting.empty?
+        break if rds.empty? && @waiting.empty? && @ready.empty?
         next if rds.empty?
 
-        t = @waiting.empty? ? 0.1 : [0.001, @waiting.map {|_, deadline| deadline - now }.min].max
+        # If there are no waiting fibers, default to a 0.1s max timeout
+        t = @waiting.empty? ? 0.1 : [0.001, @waiting.map { |_, deadline| deadline - now }.min].max
         ready = IO.select(rds, nil, nil, t)
+
         (ready&.first || []).each do |io|
-          f = @readable.delete io
+          f = @readable.delete(io)
           f&.resume
         end
       end
