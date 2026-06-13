@@ -107,19 +107,20 @@ class UniffiOnceFlag
   end
 end
 
+# Called by Rust when the foreign future is dropped (i.e. canceled or completed successfully).
+# Raises UniffiInternalCancelled in the worker thread so make_call can exit early,
+# but only if the thread hasn't already completed and claimed the once flag.
+# Stored as a constant to prevent GC from collecting the Proc while Rust holds the pointer.
+UNIFFI_FOREIGN_FUTURE_DROPPED_CALLBACK = Proc.new do |handle|
+  thread, once = UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.remove handle
+  thread.raise(UniffiInternalCancelled, 'Future was canceled') if once.claim! && thread&.alive?
+end
+
 # Execute a foreign async callback method in a background thread.
 # Enforces the at-most-once guarantee on handle_success / handle_error: whichever
 # fires first (normal completion or Rust-side drop) suppresses the other.
 def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callback, handle_success, handle_error, error_type = nil, lower_error = nil)
   once = UniffiOnceFlag.new
-
-  # Called by Rust when the foreign future is dropped (i.e. canceled or completed successfully).
-  # Raises UniffiInternalCancelled in the worker thread so make_call can exit early,
-  # but only if the thread hasn't already completed and claimed the once flag.
-  dropped_callback = Proc.new do |handle|
-    thread = UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.remove handle
-    thread.raise(UniffiInternalCancelled, 'Future was canceled') if once.claim! && thread&.alive?
-  end
 
   thread = Thread.new do
     begin
@@ -162,8 +163,8 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
   # Note: the thread may have already completed by this point, but that's safe.
   # Rust cannot invoke dropped_callback until this function returns.
   # possesses the ForeignFuture struct we're populating here.
-  handle = UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.insert(thread)
+  handle = UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.insert([thread, once])
   uniffi_out_dropped_callback[:handle] = handle
-  uniffi_out_dropped_callback[:free] = dropped_callback
+  uniffi_out_dropped_callback[:free] = UNIFFI_FOREIGN_FUTURE_DROPPED_CALLBACK
 end
 {%- endif %}
