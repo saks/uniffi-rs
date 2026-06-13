@@ -37,12 +37,15 @@ end
 # This guarantees Rust fires the continuation callback so the handle-map entry is released
 # and the pipe is drained before we free the future.
 def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, free_fn, lift_func, error_ffi_converter)
-  rd, wr = IO.pipe
-  wr.sync = true # avoid buffering and delayed for rd.wait_readable
-  handle = UNIFFI_ASYNC_HANDLE_MAP.insert wr
+  rd = wr = nil
+  handle = nil
   poll_in_flight = false
 
   begin
+    rd, wr = IO.pipe
+    wr.sync = true # avoid buffering and delayed for rd.wait_readable
+    handle = UNIFFI_ASYNC_HANDLE_MAP.insert wr
+
     loop do
       poll_in_flight = true
       UniFFILib.public_send(poll_fn, rust_future, UNIFFI_CONTINUATION_CALLBACK, handle)
@@ -76,9 +79,9 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, fr
     end
 
     # Remove handle first so any late-firing callback's `get` raises (swallowed by rescue).
-    UNIFFI_ASYNC_HANDLE_MAP.remove(handle) rescue nil
-    rd.close rescue nil
-    wr.close rescue nil
+    UNIFFI_ASYNC_HANDLE_MAP.remove(handle) rescue nil if handle
+    rd&.close rescue nil
+    wr&.close rescue nil
     UniFFILib.public_send(free_fn, rust_future)
   end
 end
