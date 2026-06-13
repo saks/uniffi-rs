@@ -15,10 +15,8 @@ UNIFFI_ASYNC_HANDLE_MAP = UniffiHandleMap.new
 # which would cause the polling loop to hang indefinitely.
 UNIFFI_CONTINUATION_CALLBACK = Proc.new do |data, poll_code|
   begin
-    wr = UNIFFI_ASYNC_HANDLE_MAP.remove(data)
-    next unless wr # guard against concurrent cancellation cleanup already removing the handle
-    wr.putc(poll_code)
-    wr.close
+    wr = UNIFFI_ASYNC_HANDLE_MAP.get data
+    wr.putc poll_code
   rescue Exception
     # Swallow exception. A leak or a hang is better than a hard VM segfault.
   end
@@ -36,15 +34,13 @@ end
 # This guarantees Rust fires the continuation callback so the handle-map entry is released
 # and the pipe is drained before we free the future.
 def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, free_fn, lift_func, error_ffi_converter)
-  current_rd = nil
-  current_handle = nil
+  rd, wr = IO.pipe
+  handle = UNIFFI_ASYNC_HANDLE_MAP.insert wr
+  poll_in_flight = false
 
   begin
     loop do
-      rd, wr = IO.pipe
-      handle = UNIFFI_ASYNC_HANDLE_MAP.insert(wr)
-      current_rd = rd
-      current_handle = handle
+      poll_in_flight = true
       UniFFILib.public_send(poll_fn, rust_future, UNIFFI_CONTINUATION_CALLBACK, handle)
 
       # Blocks until the continuation callback writes to the pipe.
@@ -52,9 +48,7 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, fr
       # With a Fiber::Scheduler, this hooks into io_wait for non-blocking concurrency.
       rd.wait_readable
       poll_code = rd.getbyte
-      rd.close
-      current_rd = nil
-      current_handle = nil
+      poll_in_flight = false
 
       break if poll_code == UNIFFI_RUST_FUTURE_POLL_READY
     end
@@ -67,17 +61,20 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, fr
 
     lift_func.call(result)
   ensure
-    if current_handle
-      # An exception interrupted an in-flight poll. This prevents handle-map entry leaks.
+    if poll_in_flight
+      # An exception interrupted an in-flight poll. Cancel and drain the byte
+      # the continuation callback will write so we don't leak the pipe.
       UniFFILib.public_send(cancel_fn, rust_future)
-      # Wait up to 0.5s for the continuation to fire, then drain the pipe.
-      current_rd.wait_readable(0.5) rescue nil
-      current_rd.close rescue nil
-      # Safety net: if the callback somehow never fired, remove the entry manually.
-      if (leftover_wr = UNIFFI_ASYNC_HANDLE_MAP.remove(current_handle) rescue nil)
-        leftover_wr.close rescue nil
+      # rd.wait_readable may time out and return nil if Thread#raise happens before UniFFILib.public_send
+      if rd.wait_readable(0.5)
+        rd.getbyte
       end
     end
+
+    # Remove handle first so any late-firing callback's `get` raises (swallowed by rescue).
+    UNIFFI_ASYNC_HANDLE_MAP.remove(handle) rescue nil
+    rd.close rescue nil
+    wr.close rescue nil
     UniFFILib.public_send(free_fn, rust_future)
   end
 end
