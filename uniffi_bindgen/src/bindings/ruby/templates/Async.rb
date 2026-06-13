@@ -16,6 +16,9 @@ UNIFFI_ASYNC_HANDLE_MAP = UniffiHandleMap.new
 UNIFFI_CONTINUATION_CALLBACK = Proc.new do |data, poll_code|
   begin
     wr = UNIFFI_ASYNC_HANDLE_MAP.get data
+
+    # This can only be blocking if pipe if full. Rust will never try to call continuation
+    # callback more than once, so this should never block.
     wr.putc poll_code
   rescue Exception
     # Swallow exception. A leak or a hang is better than a hard VM segfault.
@@ -35,6 +38,7 @@ end
 # and the pipe is drained before we free the future.
 def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, free_fn, lift_func, error_ffi_converter)
   rd, wr = IO.pipe
+  wr.sync = true # avoid buffering and delayed for rd.wait_readable
   handle = UNIFFI_ASYNC_HANDLE_MAP.insert wr
   poll_in_flight = false
 
