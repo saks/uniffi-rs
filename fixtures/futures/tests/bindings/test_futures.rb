@@ -205,6 +205,39 @@ class TestFutures < Test::Unit::TestCase
     )
   end
 
+  def test_deadlock_stress
+    50.times do |i|
+      threads = 4.times.map do
+        t = Thread.new do
+          Futures.use_shared_resource(
+            Futures::SharedResourceOptions.new(release_after_ms: 5000, timeout_ms: 10)
+          )
+        end
+        t.report_on_exception = false
+        t
+      end
+
+      sleep 0.01
+      threads.each(&:raise) # cancel
+
+      threads.each do |t|
+        begin
+          t.join(2)
+        rescue Exception
+          # Expected - thread died from RuntimeError (our raise) or AsyncError::Timeout
+          next
+        end
+        # join returned nil (timeout) - thread is stuck
+        if !t.alive?
+          next # Thread finished between join timeout and alive? check
+        end
+
+        t.kill
+        flunk "Deadlock detected in iteration #{i}"
+      end
+    end
+  end
+
   def test_cancel
     thread = Thread.new { Futures.say_after 200, 'Alice' }
     thread.report_on_exception = false
