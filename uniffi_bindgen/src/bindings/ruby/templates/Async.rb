@@ -68,21 +68,26 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, fr
 
     lift_func.call(result)
   ensure
-    if poll_in_flight
-      # An exception interrupted an in-flight poll. Cancel and drain the byte
-      # the continuation callback will write so we don't leak the pipe.
-      UniFFILib.public_send(cancel_fn, rust_future)
-      # rd.wait_readable may time out and return nil if Thread#raise happens before UniFFILib.public_send
-      if rd.wait_readable(0.5)
-        rd.getbyte
+    # Defer any further Thread#raise / Timeout during cleanup so all steps execute
+    # automatically. Without this, a second raise during wait_readable(0.5) would skip
+    # handle-map removal, pipe close, and free_fn - leaking FDs and Rust memory.
+    Thread.handle_interrupt(Exception => :never) do
+      if poll_in_flight
+        # An exception interrupted an in-flight poll. Cancel and drain the byte
+        # the continuation callback will write so we don't leak the pipe.
+        UniFFILib.public_send(cancel_fn, rust_future)
+        # rd.wait_readable may time out and return nil if Thread#raise happens before UniFFILib.public_send
+        if rd.wait_readable(0.5)
+          rd.getbyte
+        end
       end
-    end
 
-    # Remove handle first so any late-firing callback's `get` raises (swallowed by rescue).
-    UNIFFI_ASYNC_HANDLE_MAP.remove(handle) rescue nil if handle
-    rd&.close rescue nil
-    wr&.close rescue nil
-    UniFFILib.public_send(free_fn, rust_future)
+      # Remove handle first so any late-firing callback's `get` raises (swallowed by rescue).
+      UNIFFI_ASYNC_HANDLE_MAP.remove(handle) rescue nil if handle
+      rd&.close rescue nil
+      wr&.close rescue nil
+      UniFFILib.public_send(free_fn, rust_future)
+    end
   end
 end
 
