@@ -184,7 +184,7 @@ pub struct RustFuture<FfiType, Callback = RustFutureContinuationBoundCallback> {
     // This Mutex should never block if our code is working correctly, since there should not be
     // multiple threads calling [Self::poll] and/or [Self::complete] at the same time.
     future: Mutex<WrappedFuture<FfiType>>,
-    scheduler: Mutex<Scheduler<Callback>>,
+    scheduler: Scheduler<Callback>,
 }
 
 impl<FfiType, Callback> RustFuture<FfiType, Callback>
@@ -198,7 +198,7 @@ where
     {
         Self {
             future: Mutex::new(WrappedFuture::new(future)),
-            scheduler: Mutex::new(Scheduler::new()),
+            scheduler: Scheduler::new(),
         }
     }
 
@@ -213,16 +213,16 @@ where
             trace!("RustFuture::poll is ready (cancelled: {cancelled})");
             callback.invoke(RustFuturePoll::Ready)
         } else {
-            self.scheduler.lock().unwrap().store(callback);
+            self.scheduler.store(callback);
         }
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.scheduler.lock().unwrap().is_cancelled()
+        self.scheduler.is_cancelled()
     }
 
     pub fn cancel(&self) {
-        self.scheduler.lock().unwrap().cancel();
+        self.scheduler.cancel();
     }
 
     pub fn complete(&self, call_status: &mut RustCallStatus) -> FfiType
@@ -234,7 +234,7 @@ where
 
     pub fn free(&self) {
         // Call cancel() to send any leftover data to the continuation callback
-        self.scheduler.lock().unwrap().cancel();
+        self.scheduler.cancel();
         // Ensure we drop our inner future, releasing all held references
         self.future.lock().unwrap().free();
     }
@@ -262,19 +262,7 @@ where
 
     unsafe fn waker_wake(ptr: *const ()) {
         trace!("RustFuture::waker_wake called ({ptr:?})");
-        let arc = Self::recreate_arc(ptr);
-        // Take the callback out under the lock, then invoke it AFTER releasing
-        // the lock. The callback crosses the FFI into a foreign runtime,
-        // which may require acquiring a runtime lock (e.g. Ruby's GVL).
-        // Meanwhile, the calling Ruby thread holds the GVL and may enter
-        // cancel/free (which acquires the scheduler lock) - an ABBA deadlock
-        // between scheduler lock and the GVL.
-        let callback = arc.scheduler.lock().unwrap().wake();
-        drop(arc);
-
-        if let Some(callback) = callback {
-            callback.invoke(RustFuturePoll::Wake);
-        }
+        Self::recreate_arc(ptr).scheduler.wake();
     }
 
     unsafe fn waker_wake_by_ref(ptr: *const ()) {
@@ -282,11 +270,7 @@ where
         // For wake_by_ref, we can use the pointer directly, without consuming it to re-create the
         // arc.
         let ptr = ptr.cast::<Self>();
-        let callback = (*ptr).scheduler.lock().unwrap().wake();
-
-        if let Some(callback) = callback {
-            callback.invoke(RustFuturePoll::Wake);
-        }
+        (*ptr).scheduler.wake();
     }
 
     unsafe fn waker_drop(ptr: *const ()) {
