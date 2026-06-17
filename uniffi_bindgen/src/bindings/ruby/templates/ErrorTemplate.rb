@@ -89,18 +89,41 @@ ERROR_MODULE_TO_READER_METHOD = {
 {%- endfor -%}
 {% for obj in ci.object_definitions() %}
 {%- if ci.is_name_used_as_error(obj.name()) -%}
-  '{{ obj.name()|class_name_rb }}' => :read_{{ self::canonical_name(obj.as_type().borrow()) }},
+  {{ obj.name()|class_name_rb }} => :read_{{ self::canonical_name(obj.as_type().borrow()) }},
 {% endif %}
+{%- endfor -%}
+{%- for type_ in ci.iter_external_types() -%}
+{%- match type_ -%}
+{%- when Type::Enum { name, module_path, .. } -%}
+{%- if ci.is_name_used_as_error(name) -%}
+  '{{ self.external_class_name(module_path, name) }}' => :read_{{ self::canonical_name(type_) }},
+{%- endif -%}
+{%- when Type::Object { name, module_path, .. } -%}
+{%- if ci.is_name_used_as_error(name) -%}
+  '{{ self.external_class_name(module_path, name) }}' => :read_{{ self::canonical_name(type_) }},
+{%- endif -%}
+{%- else -%}
+{%- endmatch -%}
 {%- endfor -%}
 }
 
 private_constant :ERROR_MODULE_TO_READER_METHOD, :CALL_SUCCESS, :CALL_ERROR, :CALL_PANIC,
                  :RustCallStatus
 
-def self.consume_buffer_into_error(error_module, rust_buffer)
+def self.consume_buffer_into_error(error_id, class_name, rust_buffer)
+  if error_id.is_a?(String)
+    # External error: delegate to the external module's consume_into_* method
+    ext_mod = Object.const_get(error_id)
+    ext_buf = ext_mod::RustBuffer.new
+    ext_buf[:capacity] = rust_buffer[:capacity]
+    ext_buf[:len] = rust_buffer[:len]
+    ext_buf[:data] = rust_buffer[:data]
+    # The consume method name mirrors: canonical_name = "Type" + class_name
+    consume_method = "consume_into_Type#{class_name}"
+    raise ext_buf.send(consume_method)
+  end
   rust_buffer.consumeWithStream do |stream|
-    reader_method = ERROR_MODULE_TO_READER_METHOD[error_module] ||
-                    ERROR_MODULE_TO_READER_METHOD[error_module.name&.split('::')&.last]
+    reader_method = ERROR_MODULE_TO_READER_METHOD.fetch(error_id)
     return stream.send(reader_method)
   end
 end
@@ -110,13 +133,13 @@ end
 
 def self.rust_call(fn_name, *args)
   # Call a rust function
-  rust_call_with_error(nil, fn_name, *args)
+  rust_call_with_error(nil, nil, fn_name, *args)
 end
 
-def self.rust_call_with_error(error_module, fn_name, *args)
+def self.rust_call_with_error(error_id, class_name, fn_name, *args)
   # Call a rust function and handle errors
   #
-  # Use this when the rust function returns a Result<>.  error_module must be the error_module that corresponds to that Result.
+  # Use this when the rust function returns a Result<>.  error_id must be the error_module that corresponds to that Result.
 
 
   # Note: RustCallStatus.new zeroes out the struct, which is exactly what we
@@ -131,18 +154,18 @@ def self.rust_call_with_error(error_module, fn_name, *args)
   when CALL_SUCCESS
     result
   when CALL_ERROR
-    if error_module.nil?
+    if error_id.nil?
       status.error_buf.free
       raise InternalError, "CALL_ERROR with no error_module set"
     else
-      raise consume_buffer_into_error(error_module, status.error_buf)
+      raise consume_buffer_into_error(error_id, class_name, status.error_buf)
     end
   when CALL_PANIC
     # When the rust code sees a panic, it tries to construct a RustBuffer
     # with the message.  But if that code panics, then it just sends back
     # an empty buffer.
     if status.error_buf.len > 0
-      raise InternalError, {{ "status.error_buf"|lift_rb(&Type::String, config) }}
+      raise InternalError, {{ "status.error_buf"|lift_rb(&Type::String, config, ci) }}
     else
       raise InternalError, "Rust panic"
     end
