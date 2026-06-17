@@ -141,3 +141,19 @@ rust-crate-name = "kotlin.package.name"
 For Swift, you must compile all generated `.swift` files together in a single
 module since the generate code expects that it can access external types
 without importing them.
+
+### Ruby
+
+For Ruby, external types are supported out of the box in library mode
+(`generate --library [path-to-cdylib]`). When using `generate [udl-path]`, the
+generated code uses `require` to pull in the external module's bindings file.
+By default, UniFFI assumes the Ruby module name matches the Rust crate name.
+This can be configured in `uniffi.toml`:
+
+```
+[bindings.ruby.external_packages]
+# Map crate names from [External={name}] into Ruby module names
+rust-crate-name = "RubyModuleName"
+```
+
+See the [Ruby configuration](../ruby/configuration.md) page for more details.
