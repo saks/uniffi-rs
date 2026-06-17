@@ -9,7 +9,7 @@ The generated Ruby modules can be configured using a `uniffi.toml` configuration
 | `cdylib_name`      | `uniffi_{namespace}`[^1] | The name of the compiled Rust library containing the FFI implementation (not needed when using `generate --library`). |
 | `cdylib_path`      | | An explicit path to the shared library, passed as the `ffi_lib` argument. |
 | `custom_types`     | | A map which controls how custom types are exposed to Ruby. See the [custom types section of the manual](../types/custom_types.md#custom-types-in-the-bindings-code) |
-| `external_packages` | | A map from Rust crate names to Ruby module names for use with [external types](../types/remote_ext_types.md). |
+| `external_packages` | | A map from Rust crate names to Ruby module names for use with [external types](../types/remote_ext_types.md). Changing the module name here affects both `require` paths and module references in generated code — ensure both are consistent. |
 | `rename`           | | A map to rename types, functions, methods, and their members in the generated Ruby bindings. See the [renaming section](../renaming.md). |
 | `exclude`          | | A list of crate names to exclude when generating bindings for a library (library mode). |
 

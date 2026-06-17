@@ -299,13 +299,13 @@ class RustBuffer < FFI::Struct
   {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
   # External type bridge: delegates to external module
   def self.alloc_from_{{ canonical_type_name }}(v)
-    mod_name = "{{ self.external_type_module(typ.module_path().unwrap()) }}"
-    Object.const_get("#{mod_name}::RustBuffer").alloc_from_{{ canonical_type_name }}(v)
+    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    mod.const_get(:RustBuffer).alloc_from_{{ canonical_type_name }}(v)
   end
 
   def consume_into_{{ canonical_type_name }}
-    mod_name = "{{ self.external_type_module(typ.module_path().unwrap()) }}"
-    Object.const_get("#{mod_name}::RustBuffer").new.tap { |buf|
+    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    mod.const_get(:RustBuffer).new.tap { |buf|
       buf[:capacity] = self[:capacity]
       buf[:len] = self[:len]
       buf[:data] = self[:data]
@@ -313,8 +313,8 @@ class RustBuffer < FFI::Struct
   end
 
   def self.check_lower_{{ canonical_type_name }}(v)
-    mod_name = "{{ self.external_type_module(typ.module_path().unwrap()) }}"
-    Object.const_get("#{mod_name}::RustBuffer").check_lower_{{ canonical_type_name }}(v)
+    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    mod.const_get(:RustBuffer).check_lower_{{ canonical_type_name }}(v)
   end
   {%- else %}
   {%- endmatch %}

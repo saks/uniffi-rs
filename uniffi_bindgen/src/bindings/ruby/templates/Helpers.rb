@@ -26,11 +26,11 @@ UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
 # to Rust via the call_status.
 # If error_type is provided, known errors of that type are reported as UNIFFI_CALLBACK_ERROR;
 # all other errors are reported as UNIFFI_CALLBACK_UNEXPECTED_ERROR.
-def self.uniffi_trait_interface_call(call_status, make_call, write_return_value, error_type = nil, lower_error = nil)
+def self.uniffi_trait_interface_call(call_status, make_call, write_return_value, error_class_name = nil, external_module = nil, lower_error = nil)
   begin
     write_return_value.call make_call.call
   rescue StandardError => e
-    buf = if !error_type.nil? && uniffi_is_error_type?(e, error_type)
+    buf = if !error_class_name.nil? && uniffi_is_error_type?(e, error_class_name, external_module)
       call_status[:code] = UNIFFI_CALLBACK_ERROR
       lower_error.call e
     else
@@ -48,7 +48,13 @@ end
 # Check if an exception is a variant of the given error type.
 # Error types in Ruby are either modules (non-flat enums) or classes (flat enums),
 # with variant classes as constant within them.
-def self.uniffi_is_error_type?(e, error_type)
+# For external errors, error_type is a String class name and external_module
+# specifies the module to resolve it in.
+def self.uniffi_is_error_type?(e, error_type, external_module = nil)
+  if external_module
+    error_type = Object.const_get("#{external_module}::#{error_type}")
+  end
+
   # Object-as-error: error_type is a class itself (e.g. MyError < StandardError)
   if error_type.is_a?(Class) && e.is_a?(error_type)
     return true

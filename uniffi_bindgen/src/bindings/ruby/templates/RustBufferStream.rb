@@ -354,7 +354,7 @@ class RustBufferStream
   # External type bridge: delegates read to external module
   def read_{{ canonical_type_name }}
     ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    ext_stream = Object.const_get("#{ext_mod}::RustBufferStream").allocate
+    ext_stream = ext_mod.const_get(:RustBufferStream).allocate
     ext_stream.instance_variable_set(:@rbuf, @rbuf)
     ext_stream.instance_variable_set(:@offset, @offset)
     result = ext_stream.read_{{ canonical_type_name }}
