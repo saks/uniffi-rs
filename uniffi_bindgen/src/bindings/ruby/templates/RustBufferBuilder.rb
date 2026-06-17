@@ -312,6 +312,21 @@ class RustBufferBuilder
   {%- endmatch -%}
   {%- endfor %}
 
+  {%- for typ in ci.iter_external_types() -%}
+  {%- let canonical_type_name = self::canonical_name(typ) -%}
+  {%- match typ %}
+  {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
+  # External type bridge: delegates write to external module
+  def write_{{ canonical_type_name }}(v)
+    ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    ext_builder = Object.const_get("#{ext_mod}::RustBufferBuilder").allocate
+    ext_builder.instance_variable_set(:@rust_buf, @rust_buf)
+    ext_builder.write_{{ canonical_type_name }}(v)
+  end
+  {%- else %}
+  {%- endmatch %}
+  {%- endfor %}
+
   private
 
   def reserve(num_bytes)

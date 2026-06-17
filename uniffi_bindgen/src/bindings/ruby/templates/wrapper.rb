@@ -49,24 +49,17 @@ module {{ ci.namespace()|class_name_rb }}
   {%- for type_ in ci.iter_local_types() -%}
   {%- match type_ -%}
   {%- when Type::Custom { name, builtin, .. } -%}
-  {%- if !ci.is_external(type_) %}
+  {%- if !self.is_external_type(type_) %}
   {% include "CustomTypeTemplate.rb" %}
   {%- else -%}
-  {%- match config.custom_types.get(name.as_str()) %}
-  {%- when Some(cfg) %}
-  {%- match cfg.imports %}
-  {%- when Some(imports) %}
-  # External custom type `{{ name }}`: importing configured dependencies.
-  {%- for import_name in imports %}
-  require '{{ import_name }}'
-  {%- endfor %}
-  {%- when None %}
-  {%- endmatch %}
-  {%- when None %}
-  {%- endmatch %}
+  {% include "ExternalTypeTemplate.rb" %}
   {%- endif %}
   {%- else -%}
   {%- endmatch %}
+  {%- endfor %}
+
+  {%- for type_ in ci.iter_external_types() %}
+  {% include "ExternalTypeTemplate.rb" %}
   {%- endfor %}
 
   # Public interface members begin here.
@@ -93,6 +86,17 @@ module {{ ci.namespace()|class_name_rb }}
   {%- let name = cbi.name() %}
   {% include "CallbackInterfaceTemplate.rb" %}
   {% endfor %}
+
+  {%- let init_fns = self.initialization_fns() %}
+  {%- if !init_fns.is_empty() %}
+  {%- for init_fn in init_fns %}
+  {{ init_fn }}
+  {%- endfor %}
+  {%- endif %}
 end
+
+{%- for path in self.requires() %}
+require '{{ path }}'
+{%- endfor %}
 
 {% import "macros.rb" as rb %}

@@ -35,7 +35,7 @@ def self.uniffi_trait_interface_call(call_status, make_call, write_return_value,
       lower_error.call e
     else
       call_status[:code] = UNIFFI_CALLBACK_UNEXPECTED_ERROR
-      {{ "e.inspect"|lower_rb(&Type::String, config) }}
+      {{ "e.inspect"|lower_rb(&Type::String, config, ci) }}
     end
 
     error_buf = call_status[:error_buf]
