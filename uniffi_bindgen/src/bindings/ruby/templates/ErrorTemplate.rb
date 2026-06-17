@@ -80,16 +80,16 @@ end
 {% endif %}
 {%- endfor %}
 
-# Map error modules to the RustBuffer method name that reads them
+# Map error class names to the RustBuffer method name that reads them
 ERROR_MODULE_TO_READER_METHOD = {
 {% for e in ci.enum_definitions() %}
 {%- if ci.is_name_used_as_error(e.name()) -%}
-  {{ e.name()|class_name_rb }} => :read_{{ self::canonical_name(e.as_type().borrow()) }},
+  '{{ e.name()|class_name_rb }}' => :read_{{ self::canonical_name(e.as_type().borrow()) }},
 {% endif %}
 {%- endfor -%}
 {% for obj in ci.object_definitions() %}
 {%- if ci.is_name_used_as_error(obj.name()) -%}
-  {{ obj.name()|class_name_rb }} => :read_{{ self::canonical_name(obj.as_type().borrow()) }},
+  '{{ obj.name()|class_name_rb }}' => :read_{{ self::canonical_name(obj.as_type().borrow()) }},
 {% endif %}
 {%- endfor -%}
 {%- for type_ in ci.iter_external_types() -%}
@@ -123,7 +123,7 @@ def self.consume_buffer_into_error(error_id, class_name, rust_buffer)
     raise ext_buf.send(consume_method)
   end
   rust_buffer.consumeWithStream do |stream|
-    reader_method = ERROR_MODULE_TO_READER_METHOD.fetch(error_id)
+    reader_method = ERROR_MODULE_TO_READER_METHOD.fetch(class_name)
     return stream.send(reader_method)
   end
 end
