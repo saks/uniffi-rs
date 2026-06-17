@@ -144,9 +144,11 @@ without importing them.
 
 ### Ruby
 
-For Ruby, external types are supported out of the box in library mode
-(`generate --library [path-to-cdylib]`). When using `generate [udl-path]`, the
-generated code uses `require` to pull in the external module's bindings file.
+For Ruby, external types are supported in library mode
+(`generate --library [path-to-cdylib]`). Single-UDL generation (`generate [udl-path]`)
+is not supported for external types, as the generator cannot resolve types from
+other crates without their compiled scaffolding metadata. Library mode generates
+all bindings files together and uses `require` to pull in external modules at runtime.
 By default, UniFFI assumes the Ruby module name matches the Rust crate name.
 This can be configured in `uniffi.toml`:
 

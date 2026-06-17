@@ -49,11 +49,7 @@ module {{ ci.namespace()|class_name_rb }}
   {%- for type_ in ci.iter_local_types() -%}
   {%- match type_ -%}
   {%- when Type::Custom { name, builtin, .. } -%}
-  {%- if !self.is_external_type(type_) %}
   {% include "CustomTypeTemplate.rb" %}
-  {%- else -%}
-  {% include "ExternalTypeTemplate.rb" %}
-  {%- endif %}
   {%- else -%}
   {%- endmatch %}
   {%- endfor %}
@@ -87,12 +83,6 @@ module {{ ci.namespace()|class_name_rb }}
   {% include "CallbackInterfaceTemplate.rb" %}
   {% endfor %}
 
-  {%- let init_fns = self.initialization_fns() %}
-  {%- if !init_fns.is_empty() %}
-  {%- for init_fn in init_fns %}
-  {{ init_fn }}
-  {%- endfor %}
-  {%- endif %}
 end
 
 {%- for path in self.requires() %}

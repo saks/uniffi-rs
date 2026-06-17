@@ -24,18 +24,18 @@ values[{{- field_num - 1 -}}]
       {%- match builtin.borrow() -%}
       {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } -%}
       {%- if self.is_external_module(module_path) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}',
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
       {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }}, '{{ name|class_name_rb }}',
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', nil,
       {%- endif -%}
       {%- else -%}
       ::{{ ci.namespace()|class_name_rb }}.rust_call
       {%- endmatch -%}
     {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) -%}
       {%- if self.is_external_module(module_path) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}',
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
       {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }}, '{{ name|class_name_rb }}',
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', nil,
       {%- endif -%}
     {%- else -%}
       ::{{ ci.namespace()|class_name_rb }}.rust_call(
@@ -97,28 +97,28 @@ values[{{- field_num - 1 -}}]
     {%- if func.has_rust_call_status_arg() -%}RustCallStatus.by_ref{% endif -%}]
 {%- endmacro -%}
 
-{#- Helper: emit the error class name or nil for async rust calls. -#}
+{#- Helper: emit the error class name and external module for async rust calls. -#}
 {%- macro throws_error_class_expr(func) %}
     {%- match func.throws_type() %}
     {%- when Some(Type::Custom { builtin, .. }) %}
       {%- match builtin.borrow() %}
       {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
       {%- if self.is_external_module(module_path) %}
-     '{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}'
+     '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}'
       {%- else %}
-     {{ name|class_name_rb }}, '{{ name|class_name_rb }}'
+     '{{ name|class_name_rb }}', nil
       {%- endif %}
       {%- else %}
      nil, nil
       {%- endmatch %}
     {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) %}
       {%- if self.is_external_module(module_path) %}
-     '{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}'
+     '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}'
       {%- else %}
-     {{ name|class_name_rb }}, '{{ name|class_name_rb }}'
+     '{{ name|class_name_rb }}', nil
       {%- endif %}
     {%- else %}
-    nil, nil
+     nil, nil
     {%- endmatch %}
 {%- endmacro %}
 
@@ -278,9 +278,9 @@ values[{{- field_num - 1 -}}]
       make_call,
       write_return_value,
       {%- if self.is_external_module(module_path) %}
-      '{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}',
+      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
       {%- else %}
-      {{ name|class_name_rb }},
+      {{ name|class_name_rb }}, nil,
       {%- endif %}
       Proc.new { |e| {{ "e"|lower_rb(error_type, config, ci) }} }
     )
@@ -292,9 +292,9 @@ values[{{- field_num - 1 -}}]
       make_call,
       write_return_value,
       {%- if self.is_external_module(module_path) %}
-      '{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}',
+      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
       {%- else %}
-      {{ name|class_name_rb }},
+      {{ name|class_name_rb }}, nil,
       {%- endif %}
       Proc.new { |e| {{ "e"|lower_rb(builtin, config, ci) }} }
     )
@@ -333,9 +333,9 @@ values[{{- field_num - 1 -}}]
       handle_success,
       handle_error,
       {%- if self.is_external_module(module_path) %}
-      '{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}',
+      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
       {%- else %}
-      {{ name|class_name_rb }},
+      {{ name|class_name_rb }}, nil,
       {%- endif %}
       Proc.new { |e| {{ "e"|lower_rb(error_type, config, ci) }} }
     )
@@ -348,9 +348,9 @@ values[{{- field_num - 1 -}}]
       handle_success,
       handle_error,
       {%- if self.is_external_module(module_path) %}
-      '{{ self.external_type_module(module_path) }}', '{{ name|class_name_rb }}',
+      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
       {%- else %}
-      {{ name|class_name_rb }},
+      {{ name|class_name_rb }}, nil,
       {%- endif %}
       Proc.new { |e| {{ "e"|lower_rb(builtin, config, ci) }} }
     )

@@ -319,9 +319,10 @@ class RustBufferBuilder
   # External type bridge: delegates write to external module
   def write_{{ canonical_type_name }}(v)
     ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    ext_builder = Object.const_get("#{ext_mod}::RustBufferBuilder").allocate
+    ext_builder = ext_mod.const_get(:RustBufferBuilder).allocate
     ext_builder.instance_variable_set(:@rust_buf, @rust_buf)
     ext_builder.write_{{ canonical_type_name }}(v)
+    @rust_buf = ext_builder.instance_variable_get(:@rust_buf)
   end
   {%- else %}
   {%- endmatch %}

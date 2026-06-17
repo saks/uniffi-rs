@@ -201,37 +201,9 @@ impl<'a> RubyWrapper<'a> {
         self.config.external_package_name(module_path, namespace)
     }
 
-    /// Generate the fully-qualified class reference for a named external type.
-    /// E.g., `ExternalModule::ClassName`.
-    pub fn external_class_name(&self, module_path: &str, name: &str) -> String {
-        let module = self.external_type_module(module_path);
-        let class_name = class_name_rb_inner(name).unwrap_or_else(|_| name.to_string());
-        format!("{module}::{class_name}")
-    }
-
     /// Returns true if the module_path comes from a different crate.
     pub fn is_external_module(&self, module_path: &str) -> bool {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
-    }
-
-    pub fn initialization_fns(&self) -> Vec<String> {
-        let extern_module_init_fns = self
-            .ci
-            .iter_external_types()
-            .filter_map(|ty| ty.crate_name())
-            .map(|crate_name| {
-                let module = self.external_type_module(crate_name);
-                let init_fn = format!("uniffi_ensure_{}_initialized", crate_name.to_snake_case());
-                format!("{module}.{init_fn}() if defined?({module}.{init_fn})")
-            })
-            .collect::<BTreeSet<_>>();
-
-        extern_module_init_fns.into_iter().collect()
-    }
-
-    /// Whether a given type is external (from another crate).
-    pub fn is_external_type(&self, type_: &Type) -> bool {
-        self.ci.is_external(type_)
     }
 }
 
@@ -746,16 +718,12 @@ mod filters {
                     class_name_rb_inner(name)?
                 )
             }
-            Type::Enum { .. } => match module {
-                Some(m) => format!(
-                    "({m}::RustBuffer.new.tap {{ |buf| buf[:capacity] = {nm}[:capacity]; buf[:len] = {nm}[:len]; buf[:data] = {nm}[:data] }}.consume_into_{})",
-                    class_name_rb_inner(&canonical_name(type_))?
-                ),
-                None => format!(
+            Type::Enum { .. } => {
+                format!(
                     "{nm}.consume_into_{}",
                     class_name_rb_inner(&canonical_name(type_))?
-                ),
-            },
+                )
+            }
             Type::Record { .. }
             | Type::Optional { .. }
             | Type::Sequence { .. }
@@ -764,13 +732,9 @@ mod filters {
             | Type::String
             | Type::Bytes
             | Type::Duration
-            | Type::Map { .. } => match module {
-                Some(m) => format!(
-                    "({m}::RustBuffer.new.tap {{ |buf| buf[:capacity] = {nm}[:capacity]; buf[:len] = {nm}[:len]; buf[:data] = {nm}[:data] }}.consume_into_{})",
-                    canonical_name(type_)
-                ),
-                None => format!("{nm}.consume_into_{}", canonical_name(type_)),
-            },
+            | Type::Map { .. } => {
+                format!("{nm}.consume_into_{}", canonical_name(type_))
+            }
             Type::Box { .. } | Type::Custom { .. } => unreachable!(),
         })
     }
