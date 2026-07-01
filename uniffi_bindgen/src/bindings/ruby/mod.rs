@@ -95,4 +95,25 @@ fn apply_renames(components: &mut Vec<Component<Config>>) {
             rename(&mut c.ci, &module_renames);
         }
     }
+
+    // Populate external_packages from peer crates.
+    // Each crate's module name is derived from its namespace UpperCamelCased,
+    // but this can be overridden by [bindings.ruby.external_packages] in uniffi.toml.
+    let packages = HashMap::<String, String>::from_iter(components.iter().map(|c| {
+        (
+            c.ci.crate_name().to_string(),
+            // Use the namespace converted to module name as the default package
+            heck::ToUpperCamelCase::to_upper_camel_case(c.ci.namespace()),
+        )
+    }));
+    for c in components.iter_mut() {
+        for (ext_crate, ext_package) in &packages {
+            if ext_crate != c.ci.crate_name() && !c.config.external_packages.contains_key(ext_crate)
+            {
+                c.config
+                    .external_packages
+                    .insert(ext_crate.to_string(), ext_package.clone());
+            }
+        }
+    }
 }

@@ -347,6 +347,24 @@ class RustBufferStream
   {%- endmatch -%}
   {%- endfor %}
 
+  {%- for typ in ci.iter_external_types() -%}
+  {%- let canonical_type_name = self::canonical_name(typ) -%}
+  {%- match typ %}
+  {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
+  # External type bridge: delegates read to external module
+  def read_{{ canonical_type_name }}
+    ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    ext_stream = ext_mod.const_get(:RustBufferStream).allocate
+    ext_stream.instance_variable_set(:@rbuf, @rbuf)
+    ext_stream.instance_variable_set(:@offset, @offset)
+    result = ext_stream.read_{{ canonical_type_name }}
+    @offset = ext_stream.instance_variable_get(:@offset)
+    result
+  end
+  {%- else %}
+  {%- endmatch %}
+  {%- endfor %}
+
   def unpack_from(size, format)
     raise InternalError, 'read past end of rust buffer' if @offset + size > @rbuf.len
 

@@ -130,7 +130,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     {%- for field in rec.fields() %}
-    {{ "v.{}"|format(field.name()|var_name_rb)|check_lower_rb(field.as_type().borrow(), config) }}
+    {{ "v.{}"|format(field.name()|var_name_rb)|check_lower_rb(field.as_type().borrow(), config, ci) }}
     {%- endfor %}
   end
 
@@ -158,9 +158,9 @@ class RustBuffer < FFI::Struct
     if v.{{ variant.name()|var_name_rb }}?
       {%- for field in variant.fields() %}
       {%- if field.name().is_empty() %}
-        {{ "v.values[{}]"|format(loop.index0)|check_lower_rb(field.as_type().borrow(), config) }}
+        {{ "v.values[{}]"|format(loop.index0)|check_lower_rb(field.as_type().borrow(), config, ci) }}
       {%- else %}
-        {{ "v.{}"|format(field.name())|check_lower_rb(field.as_type().borrow(), config) }}
+        {{ "v.{}"|format(field.name())|check_lower_rb(field.as_type().borrow(), config, ci) }}
       {%- endif %}
       {%- endfor %}
       return
@@ -204,7 +204,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     if !v.nil?
-      {{ "v"|check_lower_rb(inner_type.borrow(), config) }}
+      {{ "v"|check_lower_rb(inner_type.borrow(), config, ci) }}
     end
   end
 
@@ -226,7 +226,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |item|
-      {{ "item"|check_lower_rb(inner_type.borrow(), config) }}
+      {{ "item"|check_lower_rb(inner_type.borrow(), config, ci) }}
     end
   end
 
@@ -248,7 +248,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |item|
-      {{ "item"|check_lower_rb(inner_type.borrow(), config) }}
+      {{ "item"|check_lower_rb(inner_type.borrow(), config, ci) }}
     end
   end
 
@@ -270,8 +270,8 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |k, v|
-      {{ "k"|check_lower_rb(k.borrow(), config) }}
-      {{ "v"|check_lower_rb(v.borrow(), config) }}
+      {{ "k"|check_lower_rb(k.borrow(), config, ci) }}
+      {{ "v"|check_lower_rb(v.borrow(), config, ci) }}
     end
   end
 
@@ -291,6 +291,33 @@ class RustBuffer < FFI::Struct
   {%- else -%}
   {#- No code emitted for types that don't lower into a RustBuffer -#}
   {%- endmatch -%}
+  {%- endfor %}
+
+  {%- for typ in ci.iter_external_types() -%}
+  {%- let canonical_type_name = self::canonical_name(typ) -%}
+  {%- match typ %}
+  {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
+  # External type bridge: delegates to external module
+  def self.alloc_from_{{ canonical_type_name }}(v)
+    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    mod.const_get(:RustBuffer).alloc_from_{{ canonical_type_name }}(v)
+  end
+
+  def consume_into_{{ canonical_type_name }}
+    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    mod.const_get(:RustBuffer).new.tap { |buf|
+      buf[:capacity] = self[:capacity]
+      buf[:len] = self[:len]
+      buf[:data] = self[:data]
+    }.consume_into_{{ canonical_type_name }}
+  end
+
+  def self.check_lower_{{ canonical_type_name }}(v)
+    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
+    mod.const_get(:RustBuffer).check_lower_{{ canonical_type_name }}(v)
+  end
+  {%- else %}
+  {%- endmatch %}
   {%- endfor %}
 end
 

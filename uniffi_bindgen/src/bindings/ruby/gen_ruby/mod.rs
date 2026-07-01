@@ -8,7 +8,8 @@ use askama::Template;
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::interface::{Enum, *};
 
@@ -21,6 +22,11 @@ const RESERVED_WORDS: &[&str] = &[
 
 fn is_reserved_word(word: &str) -> bool {
     RESERVED_WORDS.contains(&word)
+}
+
+/// Extract the crate name from a module path (everything before the first `::`).
+fn crate_name_from_module_path(module_path: &str) -> &str {
+    module_path.split("::").next().unwrap_or(module_path)
 }
 
 /// Get the canonical, unique-within-this-component name for a type.
@@ -129,6 +135,8 @@ pub struct Config {
     pub(super) exclude: Vec<String>,
     #[serde(default)]
     pub(super) rename: toml::Table,
+    #[serde(default)]
+    pub(super) external_packages: HashMap<String, String>,
 }
 
 impl Config {
@@ -145,6 +153,17 @@ impl Config {
     pub fn cdylib_path(&self) -> String {
         self.cdylib_path.clone().unwrap_or_default()
     }
+
+    pub fn external_package_name(&self, module_path: &str, namespace: Option<&str>) -> String {
+        let crate_name = crate_name_from_module_path(module_path);
+        match self.external_packages.get(crate_name) {
+            Some(name) => name.clone(),
+            None => {
+                let ns_name = namespace.unwrap_or(module_path);
+                class_name_rb_inner(ns_name).unwrap_or_else(|_| ns_name.to_string())
+            }
+        }
+    }
 }
 
 #[derive(Template)]
@@ -152,10 +171,39 @@ impl Config {
 pub struct RubyWrapper<'a> {
     config: Config,
     ci: &'a ComponentInterface,
+    requires: RefCell<BTreeSet<String>>,
 }
 impl<'a> RubyWrapper<'a> {
     pub fn new(config: Config, ci: &'a ComponentInterface) -> Self {
-        Self { config, ci }
+        Self {
+            config,
+            ci,
+            requires: RefCell::new(BTreeSet::new()),
+        }
+    }
+
+    /// Add a `require` statement for an external module's binding file.
+    /// Returns an empty string so it can be used inside an askama `{{ }}` block.
+    pub fn add_require(&self, path: &str) -> &str {
+        self.requires.borrow_mut().insert(path.to_owned());
+        ""
+    }
+
+    /// Get the sorted, deduplicated list of require paths.
+    pub fn requires(&self) -> Vec<String> {
+        self.requires.borrow().iter().cloned().collect()
+    }
+
+    /// Resolve the Ruby module name for an external type's crate.
+    /// Uses config.external_packages if configured, otherwise falls back to the namespace name.
+    pub fn external_type_module(&self, module_path: &str) -> String {
+        let namespace = self.ci.namespace_for_module_path(module_path).ok();
+        self.config.external_package_name(module_path, namespace)
+    }
+
+    /// Returns true if the module_path comes from a different crate.
+    pub fn is_external_module(&self, module_path: &str) -> bool {
+        crate_name_from_module_path(module_path) != self.ci.crate_name()
     }
 }
 
@@ -475,16 +523,37 @@ mod filters {
     }
 
     #[askama::filter_fn]
-    pub fn check_lower_rb<S: AsRef<str>>(
-        nm: S,
+    pub fn check_lower_rb(
+        nm: impl AsRef<str>,
         _: &dyn askama::Values,
         type_: &Type,
         config: &Config,
+        ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
-        let nm = nm.as_ref();
+        let module = if ci.is_external(type_) {
+            Some(module_for_type(type_, &config.external_packages, ci)?)
+        } else {
+            None
+        };
+        check_lower_rb_inner(nm.as_ref(), type_, config, module.as_deref())
+    }
+
+    fn check_lower_rb_inner(
+        nm: &str,
+        type_: &Type,
+        config: &Config,
+        module: Option<&str>,
+    ) -> Result<String, askama::Error> {
+        let prefix = |s: &str| match module {
+            Some(m) => format!("{m}::{s}"),
+            None => s.to_string(),
+        };
         Ok(match type_ {
             Type::Object { name, .. } => {
-                format!("({}.uniffi_check_lower {nm})", class_name_rb_inner(name)?)
+                format!(
+                    "({}.uniffi_check_lower {nm})",
+                    prefix(&class_name_rb_inner(name)?)
+                )
             }
             Type::Enum { .. }
             | Type::Record { .. }
@@ -492,23 +561,26 @@ mod filters {
             | Type::Sequence { .. }
             | Type::Set { .. }
             | Type::Map { .. } => {
-                format!("RustBuffer.check_lower_{}({})", canonical_name(type_), nm)
+                format!(
+                    "{}RustBuffer.check_lower_{}({nm})",
+                    prefix(""),
+                    canonical_name(type_)
+                )
             }
             Type::Custom { name, .. } => {
                 if let Some(cfg) = config.custom_types.get(name) {
                     if let Some(type_name) = &cfg.type_name {
-                        // Emit: rause TypeError, "Expected URI, got #{nm.class}" unless nm.is_a?(URI)
                         format!(
                             "raise TypeError, \"Expected {type_name}, got {{#{nm}.class}}\" unless {nm}.is_a?({type_name})"
                         )
                     } else {
-                        "".to_string()
+                        String::new()
                     }
                 } else {
-                    "".to_string()
+                    String::new()
                 }
             }
-            _ => "".to_owned(),
+            _ => String::new(),
         })
     }
 
@@ -517,34 +589,30 @@ mod filters {
         type_: &Type,
         custom_types: &HashMap<String, CustomTypeConfig>,
     ) -> Result<String, askama::Error> {
-        let mut type_ = type_;
-        while let Type::Box { inner_type } = type_ {
-            type_ = &**inner_type;
-        }
-        lower_rb_inner_no_box(nm, type_, custom_types)
+        lower_rb_inner_dispatch(nm, type_, custom_types, None)
     }
 
-    fn lower_rb_inner_no_box(
+    pub fn lower_rb_inner_dispatch(
         nm: &str,
         type_: &Type,
         custom_types: &HashMap<String, CustomTypeConfig>,
+        module: Option<&str>,
     ) -> Result<String, askama::Error> {
-        Ok(match type_ {
-            Type::Box { inner_type } => lower_rb_inner(nm, inner_type, custom_types)?,
-            Type::Custom { name, builtin, .. } => {
-                if let Some(cfg) = custom_types.get(name) {
-                    // Apply the configured `lower` expression, then lower the resulting builtin.
-                    let lowered_nm = cfg.lower(nm);
-                    lower_rb_inner(&lowered_nm, builtin, custom_types)?
-                } else {
-                    lower_rb_inner(nm, builtin, custom_types)?
-                }
-            }
-            type_ => return lower_rb_inner_dispatch(nm, type_),
-        })
-    }
-
-    pub fn lower_rb_inner_dispatch(nm: &str, type_: &Type) -> Result<String, askama::Error> {
+        if let Type::Box { inner_type } = type_ {
+            return lower_rb_inner_dispatch(nm, inner_type, custom_types, module);
+        }
+        if let Type::Custom { name, builtin, .. } = type_ {
+            let nm = if let Some(cfg) = custom_types.get(name) {
+                cfg.lower(nm)
+            } else {
+                nm.to_string()
+            };
+            return lower_rb_inner_dispatch(&nm, builtin, custom_types, module);
+        }
+        let prefix = |s: &str| match module {
+            Some(m) => format!("{m}::{s}"),
+            None => s.to_string(),
+        };
         Ok(match type_ {
             Type::Int8
             | Type::UInt8
@@ -558,11 +626,15 @@ mod filters {
             | Type::Float64 => nm.to_string(),
             Type::Boolean => format!("({nm} ? 1 : 0)"),
             Type::Object { name, .. } => {
-                format!("({}.uniffi_lower {nm})", class_name_rb_inner(name)?)
+                format!(
+                    "({}.uniffi_lower {nm})",
+                    prefix(&class_name_rb_inner(name)?)
+                )
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
-                    "(CallbackInterface{}FfiConverter.lower {})",
+                    "({}CallbackInterface{}FfiConverter.lower {})",
+                    prefix(""),
                     class_name_rb_inner(name)?,
                     nm
                 )
@@ -577,10 +649,14 @@ mod filters {
             | Type::Bytes
             | Type::Duration
             | Type::Map { .. } => {
-                format!("RustBuffer.alloc_from_{}({})", canonical_name(type_), nm)
+                format!(
+                    "{}RustBuffer.alloc_from_{}({})",
+                    prefix(""),
+                    canonical_name(type_),
+                    nm
+                )
             }
-            Type::Box { .. } => unreachable!(),
-            Type::Custom { .. } => unreachable!("Custom types should be handled before dispatch"),
+            Type::Box { .. } | Type::Custom { .. } => unreachable!(),
         })
     }
 
@@ -590,47 +666,37 @@ mod filters {
         _: &dyn askama::Values,
         type_: &Type,
         config: &Config,
+        ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
-        lower_rb_inner(nm.as_ref(), type_, &config.custom_types)
-    }
-
-    fn lift_rb_inner(
-        nm: &str,
-        type_: &Type,
-        custom_types: &HashMap<String, CustomTypeConfig>,
-    ) -> Result<String, askama::Error> {
-        let mut type_ = type_;
-        while let Type::Box { inner_type } = type_ {
-            type_ = &**inner_type;
-        }
-        lift_rb_inner_no_box(nm, type_, custom_types)
-    }
-
-    fn lift_rb_inner_no_box(
-        nm: &str,
-        type_: &Type,
-        custom_types: &HashMap<String, CustomTypeConfig>,
-    ) -> Result<String, askama::Error> {
-        Ok(match type_ {
-            Type::Box { inner_type } => lift_rb_inner(nm, inner_type, custom_types)?,
-            Type::Custom { name, builtin, .. } => {
-                // First lift the raw builtin value, then apply the configured lift expression.
-                let lifted = lift_rb_inner(nm, builtin, custom_types)?;
-                if let Some(cfg) = custom_types.get(name) {
-                    cfg.lift(&lifted)
-                } else {
-                    lifted
-                }
-            }
-            type_ => return lift_rb_inner_dispatch(nm, type_, custom_types),
-        })
+        let module = if ci.is_external(type_) {
+            Some(module_for_type(type_, &config.external_packages, ci)?)
+        } else {
+            None
+        };
+        lower_rb_inner_dispatch(nm.as_ref(), type_, &config.custom_types, module.as_deref())
     }
 
     pub fn lift_rb_inner_dispatch(
         nm: &str,
         type_: &Type,
         custom_types: &HashMap<String, CustomTypeConfig>,
+        module: Option<&str>,
     ) -> Result<String, askama::Error> {
+        if let Type::Box { inner_type } = type_ {
+            return lift_rb_inner_dispatch(nm, inner_type, custom_types, module);
+        }
+        if let Type::Custom { name, builtin, .. } = type_ {
+            let lifted = lift_rb_inner_dispatch(nm, builtin, custom_types, module)?;
+            return Ok(if let Some(cfg) = custom_types.get(name) {
+                cfg.lift(&lifted)
+            } else {
+                lifted
+            });
+        }
+        let prefix = |s: &str| match module {
+            Some(m) => format!("{m}::{s}"),
+            None => s.to_string(),
+        };
         Ok(match type_ {
             Type::Int8
             | Type::UInt8
@@ -643,11 +709,12 @@ mod filters {
             Type::Float32 | Type::Float64 => format!("{nm}.to_f"),
             Type::Boolean => format!("1 == {nm}"),
             Type::Object { name, .. } => {
-                format!("{}.uniffi_lift({nm})", class_name_rb_inner(name)?)
+                format!("{}.uniffi_lift({nm})", prefix(&class_name_rb_inner(name)?))
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
-                    "(CallbackInterface{}FfiConverter.lift {nm})",
+                    "({}CallbackInterface{}FfiConverter.lift {nm})",
+                    prefix(""),
                     class_name_rb_inner(name)?
                 )
             }
@@ -665,27 +732,46 @@ mod filters {
             | Type::String
             | Type::Bytes
             | Type::Duration
-            | Type::Map { .. } => format!("{nm}.consume_into_{}", canonical_name(type_)),
-            Type::Box { .. } => unreachable!(),
-            Type::Custom { name, builtin, .. } => {
-                let lifted = lift_rb_inner(nm, builtin, custom_types)?;
-                if let Some(cfg) = custom_types.get(name) {
-                    cfg.lift(&lifted)
-                } else {
-                    lifted
-                }
+            | Type::Map { .. } => {
+                format!("{nm}.consume_into_{}", canonical_name(type_))
             }
+            Type::Box { .. } | Type::Custom { .. } => unreachable!(),
         })
     }
 
+    /// Return the Ruby expression that lifts a lowered value `nm` into the given type.
     #[askama::filter_fn]
     pub fn lift_rb(
         nm: &str,
         _: &dyn askama::Values,
         type_: &Type,
         config: &Config,
+        ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
-        lift_rb_inner(nm, type_, &config.custom_types)
+        let module = if ci.is_external(type_) {
+            Some(module_for_type(type_, &config.external_packages, ci)?)
+        } else {
+            None
+        };
+        lift_rb_inner_dispatch(nm, type_, &config.custom_types, module.as_deref())
+    }
+
+    /// Resolve the Ruby module name for an external type.
+    fn module_for_type(
+        type_: &Type,
+        external_packages: &HashMap<String, String>,
+        ci: &ComponentInterface,
+    ) -> Result<String, askama::Error> {
+        let module_path = type_.module_path().ok_or_else(|| {
+            askama::Error::Custom(anyhow::anyhow!("no module path for type {type_:?}").into())
+        })?;
+        let crate_name = crate_name_from_module_path(module_path);
+        if let Some(package) = external_packages.get(crate_name) {
+            return Ok(package.clone());
+        }
+        ci.namespace_for_module_path(module_path)
+            .map(|ns| class_name_rb_inner(ns).unwrap_or_else(|_| ns.to_string()))
+            .map_err(|e| askama::Error::Custom(e.into()))
     }
 
     /// Render the Ruby expression that lowers the `self` value of a trait method.
