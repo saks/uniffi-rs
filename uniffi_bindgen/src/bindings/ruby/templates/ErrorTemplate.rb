@@ -94,18 +94,19 @@ ERROR_MODULE_TO_READER_METHOD = {
 {%- endfor -%}
 }
 
-# Map external error class names to lambdas that lift and raise the error
+# Map external error class names to lambdas that lift the error (caller raises)
 CONSUME_EXTERNAL_ERROR = {
 {%- for type_ in ci.iter_external_types() -%}
 {%- match type_ -%}
 {%- when Type::Enum { name, .. } -%}
 {%- if ci.is_name_used_as_error(name) -%}
-  '{{ name|class_name_rb }}' => ->(rust_buffer) { raise {{ self.lift_rb("rust_buffer", type_) }} },
+  '{{ name|class_name_rb }}' => ->(rust_buffer) { {{ self.lift_rb("rust_buffer", type_) }} },
 {%- endif -%}
 {%- when Type::Object { name, .. } -%}
 {%- if ci.is_name_used_as_error(name) -%}
   '{{ name|class_name_rb }}' => ->(rust_buffer) {
-    rust_buffer.consumeWithStream { |stream| raise stream.read_{{ self::canonical_name(type_) }} }
+    # `return` exits the lambda: consumeWithStream does not return the block value.
+    rust_buffer.consumeWithStream { |stream| return stream.read_{{ self::canonical_name(type_) }} }
   },
 {%- endif -%}
 {%- else -%}
@@ -118,8 +119,7 @@ private_constant :ERROR_MODULE_TO_READER_METHOD, :CONSUME_EXTERNAL_ERROR,
 
 def self.consume_buffer_into_error(error_class_name, external_module, rust_buffer)
   if external_module
-    CONSUME_EXTERNAL_ERROR.fetch(error_class_name).call(rust_buffer)
-    return
+    return CONSUME_EXTERNAL_ERROR.fetch(error_class_name).call(rust_buffer)
   end
   rust_buffer.consumeWithStream do |stream|
     reader_method = ERROR_MODULE_TO_READER_METHOD.fetch(error_class_name)

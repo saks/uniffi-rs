@@ -206,43 +206,42 @@ impl<'a> RubyWrapper<'a> {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
     }
 
+    /// Module prefix for lift/lower/check_lower of an external type, if any.
+    ///
+    /// Only Object and CallbackInterface need a foreign-module prefix (handle /
+    /// converter lookup). RustBuffer-backed external types must go through the
+    /// *local* `RustBuffer` / `RustBufferBuilder` bridges so alloc/reserve/free
+    /// stay on this crate's cdylib, see the comments on those bridges.
+    fn ffi_module_prefix(&self, type_: &Type) -> Option<String> {
+        match type_ {
+            Type::Box { inner_type } => self.ffi_module_prefix(inner_type),
+            // Custom conversions are applied locally; recurse into the builtin.
+            Type::Custom { builtin, .. } => self.ffi_module_prefix(builtin),
+            Type::Object { module_path, .. } | Type::CallbackInterface { module_path, .. }
+                if self.is_external_module(module_path) =>
+            {
+                Some(self.external_type_module(module_path))
+            }
+            _ => None,
+        }
+    }
+
     pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
-        let module = if self.ci.is_external(type_) {
-            let module_path = type_
-                .module_path()
-                .expect("no module path for external type");
-            Some(self.external_type_module(module_path))
-        } else {
-            None
-        };
+        let module = self.ffi_module_prefix(type_);
         filters::lift_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
             .expect("lift_rb_inner_dispatch failed")
     }
 
     pub fn lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
         let nm = nm.as_ref();
-        let module = if self.ci.is_external(type_) {
-            let module_path = type_
-                .module_path()
-                .expect("no module path for external type");
-            Some(self.external_type_module(module_path))
-        } else {
-            None
-        };
+        let module = self.ffi_module_prefix(type_);
         filters::lower_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
             .expect("lower_rb_inner_dispatch failed")
     }
 
     pub fn check_lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
         let nm = nm.as_ref();
-        let module = if self.ci.is_external(type_) {
-            let module_path = type_
-                .module_path()
-                .expect("no module path for external type");
-            Some(self.external_type_module(module_path))
-        } else {
-            None
-        };
+        let module = self.ffi_module_prefix(type_);
         filters::check_lower_rb_inner(nm, type_, &self.config, module.as_deref())
             .expect("check_lower_rb_inner failed")
     }

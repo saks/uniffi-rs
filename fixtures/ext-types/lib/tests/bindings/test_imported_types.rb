@@ -144,8 +144,9 @@ class TestImportedTypes < Test::Unit::TestCase
   def test_objects_type_with_trait
     t = ImportedTypesSublib.get_trait_impl
     sub = ImportedTypesSublib::SubLibType.new(maybe_enum: nil, maybe_trait: t, maybe_interface: nil)
-    ot = ImportedTypesLib.get_objects_type(nil)
-    assert_nil ot.maybe_trait
-    assert_nil ot.maybe_interface
+    ot = ImportedTypesLib::ObjectsType.new(maybe_trait: t, maybe_interface: nil, sub: sub)
+    result = ImportedTypesLib.get_objects_type(ot)
+    assert_equal 'sub-lib trait impl says hello', result.maybe_trait.hello
+    assert_nil result.maybe_interface
   end
 end

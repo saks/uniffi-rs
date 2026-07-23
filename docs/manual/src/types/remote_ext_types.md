@@ -173,8 +173,9 @@ For Ruby, external types are supported in library mode
 is not supported for external types, as the generator cannot resolve types from
 other crates without their compiled scaffolding metadata. Library mode generates
 all bindings files together and uses `require` to pull in external modules at runtime.
-By default, UniFFI assumes the Ruby module name matches the Rust crate name.
-This can be configured in `uniffi.toml`:
+By default, UniFFI assumes the Ruby module name is the UniFFI namespace converted to
+UpperCamelCase. This can be overridden in `uniffi.toml` (references only, `require`
+paths still use the namespace / `.rb` filename):
 
 ```
 [bindings.ruby.external_packages]

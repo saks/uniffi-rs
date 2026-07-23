@@ -1,7 +1,7 @@
 {#-
 // Template for external types from other crates.
-// Adds a require statement for the external module's bindings,
-// and generates an external error handler if the type is used as an error.
+// Records a require for the external module's binding file (emitted at
+// the end of wrapper.rb). Custom-type import deps are required inline.
 -#}
 {%- match type_ %}
 {%- when Type::Custom { name, module_path, .. } %}
