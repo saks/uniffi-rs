@@ -7,19 +7,18 @@
 require 'test/unit'
 require 'uri'
 require 'imported_types_lib'
-require 'uniffi_one_ns'
-require 'imported_types_sublib'
-require 'ext_types_custom'
 
 class TestImportedTypes < Test::Unit::TestCase
+  class UniffiOneTraitImpl < UniffiOneNs::UniffiOneTrait
+    def hello
+      'Hello from Ruby'
+    end
+  end
+
   def test_invoke_uniffi_one_trait
-    impl = Class.new(UniffiOneNs::UniffiOneTrait) do
-      def hello
-        'Hello from Ruby'
-      end
-    end.new
-    assert_equal 'Hello from Ruby',
-                 ImportedTypesLib.invoke_uniffi_one_trait(impl)
+    impl = UniffiOneTraitImpl.new
+
+    assert_equal 'Hello from Ruby', ImportedTypesLib.invoke_uniffi_one_trait(impl)
   end
 
   def test_combined_type
@@ -37,17 +36,20 @@ class TestImportedTypes < Test::Unit::TestCase
   def test_uniffi_one_type
     uot = UniffiOneNs::UniffiOneType.new(sval: 'hello')
     result = ImportedTypesLib.get_uniffi_one_type(uot)
+
     assert_equal 'hello', result.sval
   end
 
   def test_optional_vec_external_types
     uot = UniffiOneNs::UniffiOneType.new(sval: 'hello')
+
     assert_equal uot, ImportedTypesLib.get_maybe_uniffi_one_type(uot)
     assert_nil ImportedTypesLib.get_maybe_uniffi_one_type(nil)
     assert_equal [uot], ImportedTypesLib.get_uniffi_one_types([uot])
     assert_equal [uot, nil], ImportedTypesLib.get_maybe_uniffi_one_types([uot, nil])
 
     e = UniffiOneNs::UniffiOneEnum::ONE
+
     assert_equal e, ImportedTypesLib.get_maybe_uniffi_one_enum(e)
     assert_nil ImportedTypesLib.get_maybe_uniffi_one_enum(nil)
     assert_equal [e], ImportedTypesLib.get_uniffi_one_enums([e])
@@ -55,7 +57,8 @@ class TestImportedTypes < Test::Unit::TestCase
   end
 
   def test_url_custom_type
-    url = URI.parse('http://example.com/')
+    url = URI.parse 'http://example.com/'
+
     assert_equal url, ImportedTypesLib.get_url(url)
     assert_equal [url], ImportedTypesLib.get_urls([url])
     assert_equal url, ImportedTypesLib.get_maybe_url(url)
@@ -64,30 +67,36 @@ class TestImportedTypes < Test::Unit::TestCase
   end
 
   def test_external_crate_types
-    iface = ImportedTypesLib.get_external_crate_interface('foo')
+    iface = ImportedTypesLib.get_external_crate_interface 'foo'
+
     assert_equal 'foo', iface.value
   end
 
   def test_uniffi_one_enum
     e = UniffiOneNs::UniffiOneEnum::ONE
     result = ImportedTypesLib.get_uniffi_one_enum(e)
+
     assert_equal UniffiOneNs::UniffiOneEnum::ONE, result
   end
 
   def test_objects_type
     ot = ImportedTypesLib.get_objects_type(nil)
+
     assert_nil ot.maybe_trait
     assert_nil ot.maybe_interface
   end
 
   def test_procmacro_types
     t = UniffiOneNs::UniffiOneProcMacroType.new(sval: 'hello')
+
     assert_equal t, ImportedTypesLib.get_uniffi_one_proc_macro_type(t)
   end
 
   def test_external_errors
     assert_raises(UniffiOneNs::UniffiOneError::Oops) { ImportedTypesLib.throw_uniffi_one_error }
-    assert_raises(UniffiOneNs::UniffiOneErrorInterface) { ImportedTypesLib.throw_uniffi_one_error_interface }
+    assert_raises(UniffiOneNs::UniffiOneErrorInterface) do
+      ImportedTypesLib.throw_uniffi_one_error_interface
+    end
   end
 
   def test_async_external_error
@@ -126,11 +135,13 @@ class TestImportedTypes < Test::Unit::TestCase
 
   def test_rename
     t = ImportedTypesLib.get_binding_renamed_type('external_rename_test')
+
     assert_equal 'external_rename_test', t.value
   end
 
   def test_trait_impl
     t = ImportedTypesSublib.get_trait_impl
+
     assert_equal 'sub-lib trait impl says hello', t.hello
   end
 
@@ -138,7 +149,8 @@ class TestImportedTypes < Test::Unit::TestCase
     t = ImportedTypesSublib.get_trait_impl
     sub = ImportedTypesSublib::SubLibType.new(maybe_enum: nil, maybe_trait: t, maybe_interface: nil)
     result = ImportedTypesSublib.get_sub_type(sub)
-    assert_not_nil result.maybe_trait
+
+    assert_instance_of UniffiOneNs::UniffiOneTrait, result.maybe_trait
   end
 
   def test_objects_type_with_trait
@@ -146,6 +158,7 @@ class TestImportedTypes < Test::Unit::TestCase
     sub = ImportedTypesSublib::SubLibType.new(maybe_enum: nil, maybe_trait: t, maybe_interface: nil)
     ot = ImportedTypesLib::ObjectsType.new(maybe_trait: t, maybe_interface: nil, sub: sub)
     result = ImportedTypesLib.get_objects_type(ot)
+
     assert_equal 'sub-lib trait impl says hello', result.maybe_trait.hello
     assert_nil result.maybe_interface
   end
@@ -153,6 +166,6 @@ class TestImportedTypes < Test::Unit::TestCase
   def test_takes_external_error
     err = ImportedTypesSublib::NotToThrowError::Variant.new 42
 
-    ImportedTypesLib.takes_external_error(err)
+    assert_nothing_raised { ImportedTypesLib.takes_external_error(err) }
   end
 end
