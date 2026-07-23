@@ -73,6 +73,12 @@ module {{ e.name()|class_name_rb }}
       {%- endif %}
 
     end
+
+    {% for variant in e.variants() %}
+    def {{ variant.name()|var_name_rb }}?
+      instance_of? {{ e.name()|class_name_rb }}::{{ variant.name()|class_name_rb }}
+    end
+    {% endfor %}
   end
   {%- endfor %}
 {% endif %}

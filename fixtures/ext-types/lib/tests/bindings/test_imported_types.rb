@@ -149,4 +149,10 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_equal 'sub-lib trait impl says hello', result.maybe_trait.hello
     assert_nil result.maybe_interface
   end
+
+  def test_takes_external_error
+    err = ImportedTypesSublib::NotToThrowError::Variant.new 42
+
+    ImportedTypesLib.takes_external_error(err)
+  end
 end

@@ -148,7 +148,6 @@ class RustBuffer < FFI::Struct
   end
 
   {% when Type::Enum { name: enum_name, .. }  -%}
-  {% if !ci.is_name_used_as_error(enum_name) %}
   {%- let e = ci.get_enum_definition(enum_name).unwrap() -%}
   # The Enum type {{ enum_name }}.
 
@@ -181,23 +180,6 @@ class RustBuffer < FFI::Struct
       return stream.read_{{ canonical_type_name }}
     end
   end
-  {% else %}
-  {%- let e = ci.get_enum_definition(enum_name).unwrap() -%}
-  # Error enum - generate alloc_from for callback error serialization
-  def self.alloc_from_{{ canonical_type_name }}(v)
-    RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
-      return builder.finalize
-    end
-  end
-
-  # Enum used as error - generate consume_into_ for use as a return value
-  def consume_into_{{ canonical_type_name }}
-    consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
-    end
-  end
-  {% endif %}
 
   {% when Type::Optional { inner_type } -%}
   # The Optional<T> type for {{ self::canonical_name(inner_type) }}.
