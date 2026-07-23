@@ -297,19 +297,20 @@ class RustBuffer < FFI::Struct
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ %}
   {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
-  # External type bridge: delegates to external module
+  # External type bridge: allocates locally, delegates write through the
+  # bridge that routes reserve through this shared library's allocator.
   def self.alloc_from_{{ canonical_type_name }}(v)
-    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    mod.const_get(:RustBuffer).alloc_from_{{ canonical_type_name }}(v)
+    RustBuffer.allocWithBuilder do |builder|
+      builder.write_{{ canonical_type_name }}(v)
+      return builder.finalize()
+    end
   end
 
+  # External type bridge: frees locally, delegates read to external stream.
   def consume_into_{{ canonical_type_name }}
-    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    mod.const_get(:RustBuffer).new.tap { |buf|
-      buf[:capacity] = self[:capacity]
-      buf[:len] = self[:len]
-      buf[:data] = self[:data]
-    }.consume_into_{{ canonical_type_name }}
+    consumeWithStream do |stream|
+      return stream.read_{{ canonical_type_name }}
+    end
   end
 
   def self.check_lower_{{ canonical_type_name }}(v)

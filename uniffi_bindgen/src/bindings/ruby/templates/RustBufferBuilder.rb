@@ -316,23 +316,59 @@ class RustBufferBuilder
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ %}
   {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
-  # External type bridge: delegates write to external module
+  # External type bridge: delegates write through a subclass that routes
+  # reserve through this shared library's allocator (see uniffi_bridge_builder_class).
   def write_{{ canonical_type_name }}(v)
     ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    ext_builder = ext_mod.const_get(:RustBufferBuilder).allocate
+    ext_builder = self.class.send(:uniffi_bridge_builder_class, ext_mod).allocate
+    # Inherit origin from enclosing bridge, or use local RustBuffer.
+    origin = instance_variable_get(:@uniffi_origin_rust_buffer_class) || RustBuffer
+    ext_builder.instance_variable_set(:@uniffi_origin_rust_buffer_class, origin)
     ext_builder.instance_variable_set(:@rust_buf, @rust_buf)
-    ext_builder.write_{{ canonical_type_name }}(v)
-    @rust_buf = ext_builder.instance_variable_get(:@rust_buf)
+    begin
+      ext_builder.write_{{ canonical_type_name }}(v)
+    ensure
+      # Sync back on exception so cleanup uses the correct buffer.
+      @rust_buf = ext_builder.instance_variable_get(:@rust_buf)
+    end
   end
   {%- else %}
   {%- endmatch %}
   {%- endfor %}
 
+  # Each shared library has its own global allocator: a buffer allocated by
+  # one shared library must be freed and grown by that same shared library
+  # (see uniffi_core's rustbuffer.rs for the invariant).  When writing an
+  # external type into a locally-owned buffer, the external module's
+  # RustBufferBuilder would normally call its own `RustBuffer.reserve`,
+  # which routes to the foreign shared library's allocator — undefined
+  # behavior.
+  #
+  # This method caches subclasses of foreign RustBufferBuilders that
+  # override `reserve_buffer_class` to return the origin `RustBuffer`
+  # class (the one that owns the buffer memory).  The origin is propagated
+  # through `@uniffi_origin_rust_buffer_class` so that transitive external
+  # types also route reserve to the original allocator, not an intermediate
+  # crate's.
+  def self.uniffi_bridge_builder_class(ext_mod)
+    @uniffi_bridge_builders ||= {}
+    @uniffi_bridge_builders[ext_mod] ||= Class.new(ext_mod.const_get(:RustBufferBuilder)) do
+      define_method(:reserve_buffer_class) do
+        @uniffi_origin_rust_buffer_class
+      end
+    end
+  end
+  private_class_method :uniffi_bridge_builder_class
+
   private
+
+  def reserve_buffer_class
+    RustBuffer
+  end
 
   def reserve(num_bytes)
     if @rust_buf.len + num_bytes > @rust_buf.capacity
-      @rust_buf = RustBuffer.reserve(@rust_buf, num_bytes)
+      @rust_buf = reserve_buffer_class.reserve(@rust_buf, num_bytes)
     end
 
     yield
