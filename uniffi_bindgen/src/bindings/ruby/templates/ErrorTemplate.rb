@@ -100,7 +100,7 @@ CONSUME_EXTERNAL_ERROR = {
 {%- match type_ -%}
 {%- when Type::Enum { name, .. } -%}
 {%- if ci.is_name_used_as_error(name) -%}
-  '{{ name|class_name_rb }}' => ->(rust_buffer) { raise {{ "rust_buffer"|lift_rb(type_, config, ci) }} },
+  '{{ name|class_name_rb }}' => ->(rust_buffer) { raise {{ self.lift_rb("rust_buffer", type_) }} },
 {%- endif -%}
 {%- when Type::Object { name, .. } -%}
 {%- if ci.is_name_used_as_error(name) -%}
@@ -165,7 +165,7 @@ def self.rust_call_with_error(error_class_name, external_module, fn_name, *args)
     # with the message.  But if that code panics, then it just sends back
     # an empty buffer.
     if status.error_buf.len > 0
-      raise InternalError, {{ "status.error_buf"|lift_rb(&Type::String, config, ci) }}
+      raise InternalError, {{ self.lift_rb("status.error_buf", &Type::String) }}
     else
       raise InternalError, "Rust panic"
     end

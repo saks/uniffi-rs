@@ -205,6 +205,47 @@ impl<'a> RubyWrapper<'a> {
     pub fn is_external_module(&self, module_path: &str) -> bool {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
     }
+
+    pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
+        let module = if self.ci.is_external(type_) {
+            let module_path = type_
+                .module_path()
+                .expect("no module path for external type");
+            Some(self.external_type_module(module_path))
+        } else {
+            None
+        };
+        filters::lift_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
+            .expect("lift_rb_inner_dispatch failed")
+    }
+
+    pub fn lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
+        let nm = nm.as_ref();
+        let module = if self.ci.is_external(type_) {
+            let module_path = type_
+                .module_path()
+                .expect("no module path for external type");
+            Some(self.external_type_module(module_path))
+        } else {
+            None
+        };
+        filters::lower_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
+            .expect("lower_rb_inner_dispatch failed")
+    }
+
+    pub fn check_lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
+        let nm = nm.as_ref();
+        let module = if self.ci.is_external(type_) {
+            let module_path = type_
+                .module_path()
+                .expect("no module path for external type");
+            Some(self.external_type_module(module_path))
+        } else {
+            None
+        };
+        filters::check_lower_rb_inner(nm, type_, &self.config, module.as_deref())
+            .expect("check_lower_rb_inner failed")
+    }
 }
 
 fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
@@ -522,23 +563,7 @@ mod filters {
         })
     }
 
-    #[askama::filter_fn]
-    pub fn check_lower_rb(
-        nm: impl AsRef<str>,
-        _: &dyn askama::Values,
-        type_: &Type,
-        config: &Config,
-        ci: &ComponentInterface,
-    ) -> Result<String, askama::Error> {
-        let module = if ci.is_external(type_) {
-            Some(module_for_type(type_, &config.external_packages, ci)?)
-        } else {
-            None
-        };
-        check_lower_rb_inner(nm.as_ref(), type_, config, module.as_deref())
-    }
-
-    fn check_lower_rb_inner(
+    pub(super) fn check_lower_rb_inner(
         nm: &str,
         type_: &Type,
         config: &Config,
@@ -660,22 +685,6 @@ mod filters {
         })
     }
 
-    #[askama::filter_fn]
-    pub fn lower_rb(
-        nm: impl AsRef<str>,
-        _: &dyn askama::Values,
-        type_: &Type,
-        config: &Config,
-        ci: &ComponentInterface,
-    ) -> Result<String, askama::Error> {
-        let module = if ci.is_external(type_) {
-            Some(module_for_type(type_, &config.external_packages, ci)?)
-        } else {
-            None
-        };
-        lower_rb_inner_dispatch(nm.as_ref(), type_, &config.custom_types, module.as_deref())
-    }
-
     pub fn lift_rb_inner_dispatch(
         nm: &str,
         type_: &Type,
@@ -737,41 +746,6 @@ mod filters {
             }
             Type::Box { .. } | Type::Custom { .. } => unreachable!(),
         })
-    }
-
-    /// Return the Ruby expression that lifts a lowered value `nm` into the given type.
-    #[askama::filter_fn]
-    pub fn lift_rb(
-        nm: &str,
-        _: &dyn askama::Values,
-        type_: &Type,
-        config: &Config,
-        ci: &ComponentInterface,
-    ) -> Result<String, askama::Error> {
-        let module = if ci.is_external(type_) {
-            Some(module_for_type(type_, &config.external_packages, ci)?)
-        } else {
-            None
-        };
-        lift_rb_inner_dispatch(nm, type_, &config.custom_types, module.as_deref())
-    }
-
-    /// Resolve the Ruby module name for an external type.
-    fn module_for_type(
-        type_: &Type,
-        external_packages: &HashMap<String, String>,
-        ci: &ComponentInterface,
-    ) -> Result<String, askama::Error> {
-        let module_path = type_.module_path().ok_or_else(|| {
-            askama::Error::Custom(anyhow::anyhow!("no module path for type {type_:?}").into())
-        })?;
-        let crate_name = crate_name_from_module_path(module_path);
-        if let Some(package) = external_packages.get(crate_name) {
-            return Ok(package.clone());
-        }
-        ci.namespace_for_module_path(module_path)
-            .map(|ns| class_name_rb_inner(ns).unwrap_or_else(|_| ns.to_string()))
-            .map_err(|e| askama::Error::Custom(e.into()))
     }
 
     /// Render the Ruby expression that lowers the `self` value of a trait method.

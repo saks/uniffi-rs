@@ -130,7 +130,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     {%- for field in rec.fields() %}
-    {{ "v.{}"|format(field.name()|var_name_rb)|check_lower_rb(field.as_type().borrow(), config, ci) }}
+    {{ self.check_lower_rb("v.{}"|format(field.name()|var_name_rb), field.as_type().borrow()) }}
     {%- endfor %}
   end
 
@@ -158,9 +158,9 @@ class RustBuffer < FFI::Struct
     if v.{{ variant.name()|var_name_rb }}?
       {%- for field in variant.fields() %}
       {%- if field.name().is_empty() %}
-        {{ "v.values[{}]"|format(loop.index0)|check_lower_rb(field.as_type().borrow(), config, ci) }}
+        {{ self.check_lower_rb("v.values[{}]"|format(loop.index0), field.as_type().borrow()) }}
       {%- else %}
-        {{ "v.{}"|format(field.name())|check_lower_rb(field.as_type().borrow(), config, ci) }}
+        {{ self.check_lower_rb("v.{}"|format(field.name()), field.as_type().borrow()) }}
       {%- endif %}
       {%- endfor %}
       return
@@ -204,7 +204,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     if !v.nil?
-      {{ "v"|check_lower_rb(inner_type.borrow(), config, ci) }}
+      {{ self.check_lower_rb("v", inner_type.borrow()) }}
     end
   end
 
@@ -226,7 +226,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |item|
-      {{ "item"|check_lower_rb(inner_type.borrow(), config, ci) }}
+      {{ self.check_lower_rb("item", inner_type.borrow()) }}
     end
   end
 
@@ -248,7 +248,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |item|
-      {{ "item"|check_lower_rb(inner_type.borrow(), config, ci) }}
+      {{ self.check_lower_rb("item", inner_type.borrow()) }}
     end
   end
 
@@ -270,8 +270,8 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |k, v|
-      {{ "k"|check_lower_rb(k.borrow(), config, ci) }}
-      {{ "v"|check_lower_rb(v.borrow(), config, ci) }}
+      {{ self.check_lower_rb("k", k.borrow()) }}
+      {{ self.check_lower_rb("v", v.borrow()) }}
     end
   end
 

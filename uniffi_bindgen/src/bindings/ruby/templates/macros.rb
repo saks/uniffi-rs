@@ -67,7 +67,7 @@ values[{{- field_num - 1 -}}]
 
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
-        {{- arg.name()|var_name_rb|lower_rb(arg.as_type().borrow(), config, ci) }}
+        {{- self.lower_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
         {%- if !loop.last %},{% endif %}
     {%- endfor %}
 {%- endmacro -%}
@@ -134,7 +134,7 @@ values[{{- field_num - 1 -}}]
       :{{ func.ffi_rust_future_free(ci) }},
       {%- match func.return_type() %}
       {%- when Some with (return_type) %}
-      Proc.new { |v| {{ "v"|lift_rb(return_type, config, ci) }} },
+      Proc.new { |v| {{ self.lift_rb("v", return_type) }} },
       {%- when None %}
       Proc.new { |v| nil },
       {%- endmatch %}
@@ -165,14 +165,14 @@ values[{{- field_num - 1 -}}]
 {%- macro setup_args(func) %}
     {%- for arg in func.arguments() %}
     {{ arg.name()|var_name_rb }} = {{ arg.name()|var_name_rb|coerce_rb(ci.namespace()|class_name_rb, arg.as_type().borrow(), config) }}
-    {{ arg.name()|var_name_rb|check_lower_rb(arg.as_type().borrow(), config, ci) }}
+    {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
     {% endfor -%}
 {%- endmacro -%}
 
 {%- macro setup_args_extra_indent(meth) %}
         {%- for arg in meth.arguments() %}
         {{ arg.name()|var_name_rb }} = {{ arg.name()|var_name_rb|coerce_rb(ci.namespace()|class_name_rb, arg.as_type().borrow(), config) }}
-        {{ arg.name()|var_name_rb|check_lower_rb(arg.as_type().borrow(), config, ci) }}
+        {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
         {%- endfor %}
 {%- endmacro -%}
 
@@ -184,7 +184,7 @@ values[{{- field_num - 1 -}}]
     make_call = Proc.new do
       uniffi_obj.{{ method.name()|fn_name_rb }}(
         {%- for arg in method.arguments() %}
-        {{ arg.name()|lift_rb(arg.as_type().borrow(), config, ci) }}{% if !loop.last %},{% endif %}
+        {{ self.lift_rb(arg.name(), arg.as_type().borrow()) }}{% if !loop.last %},{% endif %}
         {%- endfor %}
       )
     end
@@ -199,7 +199,7 @@ values[{{- field_num - 1 -}}]
       result_struct = UniFFILib::{{ method|foreign_future_result_rb }}.new
       {%- match method.return_type() %}
       {%- when Some with (return_type) %}
-      result_struct[:return_value] = {{ "return_value"|lower_rb(return_type, config, ci) }}
+      result_struct[:return_value] = {{ self.lower_rb("return_value", return_type) }}
       result_struct[:call_status] = RustCallStatus.new
       {%- when None %}
       result_struct[:call_status] = RustCallStatus.new
@@ -240,7 +240,7 @@ values[{{- field_num - 1 -}}]
     {%- match method.return_type() %}
     {%- when Some with (return_type) %}
     write_return_value = Proc.new do |v|
-      lowered = {{ "v"|lower_rb(return_type, config, ci) }}
+      lowered = {{ self.lower_rb("v", return_type) }}
       {%- let ffi_type_name = return_type|ffi_write_return_rb %}
       {%- if ffi_type_name == "rustbuffer" %}
       # Write a RustBuffer struct into the out pointer
@@ -282,7 +282,7 @@ values[{{- field_num - 1 -}}]
       {%- else %}
       {{ name|class_name_rb }}, nil,
       {%- endif %}
-      Proc.new { |e| {{ "e"|lower_rb(error_type, config, ci) }} }
+      Proc.new { |e| {{ self.lower_rb("e", error_type) }} }
     )
     {%- when Type::Custom { builtin, .. } %}
     {%- match builtin.borrow() %}
@@ -296,7 +296,7 @@ values[{{- field_num - 1 -}}]
       {%- else %}
       {{ name|class_name_rb }}, nil,
       {%- endif %}
-      Proc.new { |e| {{ "e"|lower_rb(builtin, config, ci) }} }
+      Proc.new { |e| {{ self.lower_rb("e", builtin) }} }
     )
     {%- else %}
     raise RuntimeError, "Unsupported custom error type"
@@ -337,7 +337,7 @@ values[{{- field_num - 1 -}}]
       {%- else %}
       {{ name|class_name_rb }}, nil,
       {%- endif %}
-      Proc.new { |e| {{ "e"|lower_rb(error_type, config, ci) }} }
+      Proc.new { |e| {{ self.lower_rb("e", error_type) }} }
     )
     {%- when Type::Custom { builtin, .. } %}
     {%- match builtin.borrow() %}
@@ -352,7 +352,7 @@ values[{{- field_num - 1 -}}]
       {%- else %}
       {{ name|class_name_rb }}, nil,
       {%- endif %}
-      Proc.new { |e| {{ "e"|lower_rb(builtin, config, ci) }} }
+      Proc.new { |e| {{ self.lower_rb("e", builtin) }} }
     )
     {%- else %}
     ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(

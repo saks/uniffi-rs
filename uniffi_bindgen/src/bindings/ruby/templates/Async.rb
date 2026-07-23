@@ -152,7 +152,7 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
         if !error_class_name.nil? && ::{{ ci.namespace()|class_name_rb }}.uniffi_is_error_type?(e, error_class_name, external_module)
           handle_error.call(UNIFFI_CALLBACK_ERROR, lower_error.call(e))
         else
-          handle_error.call(UNIFFI_CALLBACK_UNEXPECTED_ERROR, {{ "e.inspect"|lower_rb(&Type::String, config, ci) }})
+          handle_error.call(UNIFFI_CALLBACK_UNEXPECTED_ERROR, {{ self.lower_rb("e.inspect", &Type::String) }})
         end
         next
       end
@@ -167,7 +167,7 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
       # once was already claimed, so only attempt this if we can still claim (e.g. lowering failed
       # before handle_error was called due to short-circuit evaluation).
       begin
-        handle_error.call(UNIFFI_CALLBACK_UNEXPECTED_ERROR, {{ "e.inspect"|lower_rb(&Type::String, config, ci) }})
+        handle_error.call(UNIFFI_CALLBACK_UNEXPECTED_ERROR, {{ self.lower_rb("e.inspect", &Type::String) }})
       rescue Exception
         # If even this fails, Rust will hang. Nothing more we can do.
       end
