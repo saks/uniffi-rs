@@ -3,3 +3,9 @@
 custom_types = ""
 ext_types_custom = ""
 uniffi_one_ns = ""
+
+[bindings.ruby.custom_types.Url]
+type_name = "URI"
+imports = ["uri"]
+lift = "URI.parse({})"
+lower = "{}.to_s"

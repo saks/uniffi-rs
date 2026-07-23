@@ -9,6 +9,7 @@ require 'uri'
 require 'imported_types_lib'
 require 'uniffi_one_ns'
 require 'imported_types_sublib'
+require 'ext_types_custom'
 
 class TestImportedTypes < Test::Unit::TestCase
   def test_invoke_uniffi_one_trait
@@ -95,6 +96,11 @@ class TestImportedTypes < Test::Unit::TestCase
     }
   end
 
+  def test_async_external_types
+    assert_equal 'nested-external-ouid', ImportedTypesLib.get_nested_external_ouid_async(nil)
+    assert_equal 'local-external-guid', ImportedTypesLib.get_local_external_guid_async
+  end
+
   def test_optional_trait
     assert_nil ImportedTypesLib.get_uniffi_one_trait(nil)
   end
@@ -103,6 +109,12 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_equal 'guid', ImportedTypesLib.get_imported_guid('guid')
     assert_equal 'ouid', ImportedTypesLib.get_imported_ouid('ouid')
     assert_equal 3, ImportedTypesLib.get_imported_handle_u8(nil)
+  end
+
+  def test_direct_custom_types
+    assert_equal 'guid', ExtTypesCustom.get_guid('guid')
+    assert_equal 'ouid', ExtTypesCustom.get_ouid('ouid')
+    assert_equal 'uuid', ExtTypesCustom.get_nested_guid('uuid')
   end
 
   def test_nested_imported_custom_types
