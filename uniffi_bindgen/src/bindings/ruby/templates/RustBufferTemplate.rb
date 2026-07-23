@@ -278,7 +278,7 @@ class RustBuffer < FFI::Struct
   {%- for typ in ci.iter_external_types() -%}
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ %}
-  {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } %}
+  {%- when Type::Record { .. } | Type::Enum { .. } %}
   # External type bridge: allocates locally, delegates write through the
   # bridge that routes reserve through this shared library's allocator.
   def self.alloc_from_{{ canonical_type_name }}(v)
