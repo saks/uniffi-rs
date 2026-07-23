@@ -119,7 +119,11 @@ private_constant :ERROR_MODULE_TO_READER_METHOD, :CONSUME_EXTERNAL_ERROR,
 
 def self.consume_buffer_into_error(error_class_name, external_module, rust_buffer)
   if external_module
-    return CONSUME_EXTERNAL_ERROR.fetch(error_class_name).call(rust_buffer)
+    handler = CONSUME_EXTERNAL_ERROR.fetch(error_class_name) do
+      raise InternalError, "Unknown external error type: #{error_class_name}"
+    end
+
+    return handler.call(rust_buffer)
   end
   rust_buffer.consumeWithStream do |stream|
     reader_method = ERROR_MODULE_TO_READER_METHOD.fetch(error_class_name)

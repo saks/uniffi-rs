@@ -14,7 +14,7 @@ class TestRemoteTypes < Test::Unit::TestCase
   def test_error_handling
     assert_raises AnyhowError do
       LogSink.new ''
-      raise RuntimeError('Constructor should have thrown')
+      raise RuntimeError, 'Constructor should have thrown'
     end
   end
 end
