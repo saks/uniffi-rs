@@ -24,18 +24,18 @@ values[{{- field_num - 1 -}}]
       {%- match builtin.borrow() -%}
       {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } -%}
       {%- if self.is_external_module(module_path) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }},
       {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', nil,
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
       {%- endif -%}
       {%- else -%}
       ::{{ ci.namespace()|class_name_rb }}.rust_call
       {%- endmatch -%}
     {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) -%}
       {%- if self.is_external_module(module_path) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }},
       {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error('{{ name|class_name_rb }}', nil,
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
       {%- endif -%}
     {%- else -%}
       ::{{ ci.namespace()|class_name_rb }}.rust_call(
@@ -97,16 +97,16 @@ values[{{- field_num - 1 -}}]
     {%- if func.has_rust_call_status_arg() -%}RustCallStatus.by_ref{% endif -%}]
 {%- endmacro -%}
 
-{#- Helper: emit the error class name and module for a concrete error type (Enum | Object). -#}
+{#- Helper: emit the error class constant for a concrete error type (Enum | Object). -#}
 {%- macro error_class_expr_args(name, module_path) %}
       {%- if self.is_external_module(module_path) %}
-     '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}'
+      ::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }}
       {%- else %}
-     '{{ name|class_name_rb }}', nil
+      {{ name|class_name_rb }}
       {%- endif %}
 {%- endmacro %}
 
-{#- Helper: emit the error class name and external module for async rust calls. -#}
+{#- Helper: emit the error class constant for async rust calls. -#}
 {%- macro throws_error_class_expr(func) %}
     {%- match func.throws_type() %}
     {%- when Some(Type::Custom { builtin, .. }) %}
@@ -114,12 +114,12 @@ values[{{- field_num - 1 -}}]
       {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
       {%- call error_class_expr_args(name, module_path) %}{% endcall %}
       {%- else %}
-     nil, nil
+      nil
       {%- endmatch %}
     {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) %}
       {%- call error_class_expr_args(name, module_path) %}{% endcall %}
     {%- else %}
-     nil, nil
+      nil
     {%- endmatch %}
 {%- endmacro %}
 
@@ -259,16 +259,16 @@ values[{{- field_num - 1 -}}]
     {%- endmatch %}
 {%- endmacro %}
 
-{#- Emit the error-specific trailing arguments (name, module, lower-proc)
+{#- Emit the error-specific trailing arguments (error class, lower-proc)
     for a sync/async trait-interface call.
     `lower_type` is the Type to use in the lower expression
     (error_type itself for direct errors, builtin for Custom-wrapped errors).
 -#}
 {%- macro trait_call_error_args(name, module_path, lower_type) %}
       {%- if self.is_external_module(module_path) %}
-      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
+      ::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }},
       {%- else %}
-      {{ name|class_name_rb }}, nil,
+      {{ name|class_name_rb }},
       {%- endif %}
       Proc.new { |e| {{ self.lower_rb("e", lower_type) }} }
 {%- endmacro %}

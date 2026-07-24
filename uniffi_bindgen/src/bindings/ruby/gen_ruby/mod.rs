@@ -230,8 +230,8 @@ impl<'a> RubyWrapper<'a> {
 
         for typ in self.ci.iter_external_types() {
             if let Type::Custom { name, .. } = typ {
-                if let Some(cfg) = self.config.custom_types.get(name.as_str()) {
-                    if let Some(extra_imports) = &cfg.imports {
+                if let Some(cfg) = self.config.custom_types.get(name) {
+                    if let Some(ref extra_imports) = cfg.imports {
                         for import_name in extra_imports {
                             imports.insert(import_name.to_string());
                         }

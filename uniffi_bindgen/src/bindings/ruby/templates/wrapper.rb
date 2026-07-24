@@ -87,6 +87,8 @@ module {{ ci.namespace()|class_name_rb }}
   {% include "CallbackInterfaceTemplate.rb" %}
   {% endfor %}
 
+  {% include "ErrorReaderMethods.rb" %}
+
 end
 
 {% import "macros.rb" as rb %}
