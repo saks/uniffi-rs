@@ -156,13 +156,14 @@ impl Config {
 
     pub fn external_package_name(&self, module_path: &str, namespace: Option<&str>) -> String {
         let crate_name = crate_name_from_module_path(module_path);
-        match self.external_packages.get(crate_name) {
-            Some(name) => name.clone(),
-            None => {
+
+        self.external_packages
+            .get(crate_name)
+            .cloned()
+            .unwrap_or_else(|| {
                 let ns_name = namespace.unwrap_or(module_path);
                 class_name_rb_inner(ns_name).unwrap_or_else(|_| ns_name.to_string())
-            }
-        }
+            })
     }
 }
 
@@ -622,22 +623,24 @@ mod filters {
         custom_types: &HashMap<String, CustomTypeConfig>,
         module: Option<&str>,
     ) -> Result<String, askama::Error> {
-        if let Type::Box { inner_type } = type_ {
-            return lower_rb_inner_dispatch(nm, inner_type, custom_types, module);
-        }
-        if let Type::Custom { name, builtin, .. } = type_ {
-            let nm = if let Some(cfg) = custom_types.get(name) {
-                cfg.lower(nm)
-            } else {
-                nm.to_string()
-            };
-            return lower_rb_inner_dispatch(&nm, builtin, custom_types, module);
-        }
         let prefix = |s: &str| match module {
             Some(m) => format!("{m}::{s}"),
             None => s.to_string(),
         };
         Ok(match type_ {
+            // Named-handle types that recurse without touching a RustBuffer.
+            Type::Box { inner_type } => {
+                lower_rb_inner_dispatch(nm, inner_type, custom_types, module)?
+            }
+            Type::Custom { name, builtin, .. } => {
+                let nm = if let Some(cfg) = custom_types.get(name) {
+                    cfg.lower(nm)
+                } else {
+                    nm.to_string()
+                };
+                lower_rb_inner_dispatch(&nm, builtin, custom_types, module)?
+            }
+            // Builtin primitives passed through by value.
             Type::Int8
             | Type::UInt8
             | Type::Int16
@@ -663,6 +666,7 @@ mod filters {
                     nm
                 )
             }
+            // Types serialized through a RustBuffer.
             Type::Enum { .. }
             | Type::Record { .. }
             | Type::Optional { .. }
@@ -680,7 +684,6 @@ mod filters {
                     nm
                 )
             }
-            Type::Box { .. } | Type::Custom { .. } => unreachable!(),
         })
     }
 
@@ -690,22 +693,24 @@ mod filters {
         custom_types: &HashMap<String, CustomTypeConfig>,
         module: Option<&str>,
     ) -> Result<String, askama::Error> {
-        if let Type::Box { inner_type } = type_ {
-            return lift_rb_inner_dispatch(nm, inner_type, custom_types, module);
-        }
-        if let Type::Custom { name, builtin, .. } = type_ {
-            let lifted = lift_rb_inner_dispatch(nm, builtin, custom_types, module)?;
-            return Ok(if let Some(cfg) = custom_types.get(name) {
-                cfg.lift(&lifted)
-            } else {
-                lifted
-            });
-        }
         let prefix = |s: &str| match module {
             Some(m) => format!("{m}::{s}"),
             None => s.to_string(),
         };
         Ok(match type_ {
+            // Named-handle types that recurse without touching a RustBuffer.
+            Type::Box { inner_type } => {
+                lift_rb_inner_dispatch(nm, inner_type, custom_types, module)?
+            }
+            Type::Custom { name, builtin, .. } => {
+                let lifted = lift_rb_inner_dispatch(nm, builtin, custom_types, module)?;
+                if let Some(cfg) = custom_types.get(name) {
+                    cfg.lift(&lifted)
+                } else {
+                    lifted
+                }
+            }
+            // Builtin primitives passed through by value.
             Type::Int8
             | Type::UInt8
             | Type::Int16
@@ -732,6 +737,7 @@ mod filters {
                     class_name_rb_inner(&canonical_name(type_))?
                 )
             }
+            // Types deserialized from a RustBuffer.
             Type::Record { .. }
             | Type::Optional { .. }
             | Type::Sequence { .. }
@@ -743,7 +749,6 @@ mod filters {
             | Type::Map { .. } => {
                 format!("{nm}.consume_into_{}", canonical_name(type_))
             }
-            Type::Box { .. } | Type::Custom { .. } => unreachable!(),
         })
     }
 
