@@ -97,26 +97,27 @@ values[{{- field_num - 1 -}}]
     {%- if func.has_rust_call_status_arg() -%}RustCallStatus.by_ref{% endif -%}]
 {%- endmacro -%}
 
+{#- Helper: emit the error class name and module for a concrete error type (Enum | Object). -#}
+{%- macro error_class_expr_args(name, module_path) %}
+      {%- if self.is_external_module(module_path) %}
+     '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}'
+      {%- else %}
+     '{{ name|class_name_rb }}', nil
+      {%- endif %}
+{%- endmacro %}
+
 {#- Helper: emit the error class name and external module for async rust calls. -#}
 {%- macro throws_error_class_expr(func) %}
     {%- match func.throws_type() %}
     {%- when Some(Type::Custom { builtin, .. }) %}
       {%- match builtin.borrow() %}
       {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
-      {%- if self.is_external_module(module_path) %}
-     '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}'
-      {%- else %}
-     '{{ name|class_name_rb }}', nil
-      {%- endif %}
+      {%- call error_class_expr_args(name, module_path) %}{% endcall %}
       {%- else %}
      nil, nil
       {%- endmatch %}
     {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) %}
-      {%- if self.is_external_module(module_path) %}
-     '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}'
-      {%- else %}
-     '{{ name|class_name_rb }}', nil
-      {%- endif %}
+      {%- call error_class_expr_args(name, module_path) %}{% endcall %}
     {%- else %}
      nil, nil
     {%- endmatch %}
@@ -258,6 +259,20 @@ values[{{- field_num - 1 -}}]
     {%- endmatch %}
 {%- endmacro %}
 
+{#- Emit the error-specific trailing arguments (name, module, lower-proc)
+    for a sync/async trait-interface call.
+    `lower_type` is the Type to use in the lower expression
+    (error_type itself for direct errors, builtin for Custom-wrapped errors).
+-#}
+{%- macro trait_call_error_args(name, module_path, lower_type) %}
+      {%- if self.is_external_module(module_path) %}
+      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
+      {%- else %}
+      {{ name|class_name_rb }}, nil,
+      {%- endif %}
+      Proc.new { |e| {{ self.lower_rb("e", lower_type) }} }
+{%- endmacro %}
+
 {#-
 // Dispatch the throws type for a sync callback/trait-interface method.
 // Caller must have in scope: uniffi_call_status, make_call, write_return_value.
@@ -277,12 +292,7 @@ values[{{- field_num - 1 -}}]
       uniffi_call_status,
       make_call,
       write_return_value,
-      {%- if self.is_external_module(module_path) %}
-      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
-      {%- else %}
-      {{ name|class_name_rb }}, nil,
-      {%- endif %}
-      Proc.new { |e| {{ self.lower_rb("e", error_type) }} }
+      {%- call trait_call_error_args(name, module_path, error_type) %}{% endcall %}
     )
     {%- when Type::Custom { builtin, .. } %}
     {%- match builtin.borrow() %}
@@ -291,12 +301,7 @@ values[{{- field_num - 1 -}}]
       uniffi_call_status,
       make_call,
       write_return_value,
-      {%- if self.is_external_module(module_path) %}
-      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
-      {%- else %}
-      {{ name|class_name_rb }}, nil,
-      {%- endif %}
-      Proc.new { |e| {{ self.lower_rb("e", builtin) }} }
+      {%- call trait_call_error_args(name, module_path, builtin) %}{% endcall %}
     )
     {%- else %}
     raise RuntimeError, "Unsupported custom error type"
@@ -332,12 +337,7 @@ values[{{- field_num - 1 -}}]
       uniffi_out_dropped_callback,
       handle_success,
       handle_error,
-      {%- if self.is_external_module(module_path) %}
-      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
-      {%- else %}
-      {{ name|class_name_rb }}, nil,
-      {%- endif %}
-      Proc.new { |e| {{ self.lower_rb("e", error_type) }} }
+      {%- call trait_call_error_args(name, module_path, error_type) %}{% endcall %}
     )
     {%- when Type::Custom { builtin, .. } %}
     {%- match builtin.borrow() %}
@@ -347,12 +347,7 @@ values[{{- field_num - 1 -}}]
       uniffi_out_dropped_callback,
       handle_success,
       handle_error,
-      {%- if self.is_external_module(module_path) %}
-      '{{ name|class_name_rb }}', '{{ self.external_type_module(module_path) }}',
-      {%- else %}
-      {{ name|class_name_rb }}, nil,
-      {%- endif %}
-      Proc.new { |e| {{ self.lower_rb("e", builtin) }} }
+      {%- call trait_call_error_args(name, module_path, builtin) %}{% endcall %}
     )
     {%- else %}
     ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(

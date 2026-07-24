@@ -255,6 +255,16 @@ fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
 mod filters {
     use super::*;
 
+    /// Qualify `name` with an optional external module path, e.g. `qualify("Foo", Some("Mod"))`
+    /// yields `"Mod::Foo"`; with `None` it yields `"Foo"` unchanged. This is the single source
+    /// of truth for prefixing names with their owning module across the lift/lower/check filters.
+    fn qualify(name: &str, module: Option<&str>) -> String {
+        match module {
+            Some(m) => format!("{m}::{name}"),
+            None => name.to_string(),
+        }
+    }
+
     #[askama::filter_fn]
     pub fn type_ffi(type_: &FfiType, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(match type_ {
@@ -569,15 +579,11 @@ mod filters {
         config: &Config,
         module: Option<&str>,
     ) -> Result<String, askama::Error> {
-        let prefix = |s: &str| match module {
-            Some(m) => format!("{m}::{s}"),
-            None => s.to_string(),
-        };
         Ok(match type_ {
             Type::Object { name, .. } => {
                 format!(
                     "({}.uniffi_check_lower {nm})",
-                    prefix(&class_name_rb_inner(name)?)
+                    qualify(&class_name_rb_inner(name)?, module)
                 )
             }
             Type::Enum { .. }
@@ -588,7 +594,7 @@ mod filters {
             | Type::Map { .. } => {
                 format!(
                     "{}RustBuffer.check_lower_{}({nm})",
-                    prefix(""),
+                    qualify("", module),
                     canonical_name(type_)
                 )
             }
@@ -623,10 +629,6 @@ mod filters {
         custom_types: &HashMap<String, CustomTypeConfig>,
         module: Option<&str>,
     ) -> Result<String, askama::Error> {
-        let prefix = |s: &str| match module {
-            Some(m) => format!("{m}::{s}"),
-            None => s.to_string(),
-        };
         Ok(match type_ {
             // Named-handle types that recurse without touching a RustBuffer.
             Type::Box { inner_type } => {
@@ -655,13 +657,13 @@ mod filters {
             Type::Object { name, .. } => {
                 format!(
                     "({}.uniffi_lower {nm})",
-                    prefix(&class_name_rb_inner(name)?)
+                    qualify(&class_name_rb_inner(name)?, module)
                 )
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
                     "({}CallbackInterface{}FfiConverter.lower {})",
-                    prefix(""),
+                    qualify("", module),
                     class_name_rb_inner(name)?,
                     nm
                 )
@@ -679,7 +681,7 @@ mod filters {
             | Type::Map { .. } => {
                 format!(
                     "{}RustBuffer.alloc_from_{}({})",
-                    prefix(""),
+                    qualify("", module),
                     canonical_name(type_),
                     nm
                 )
@@ -693,10 +695,6 @@ mod filters {
         custom_types: &HashMap<String, CustomTypeConfig>,
         module: Option<&str>,
     ) -> Result<String, askama::Error> {
-        let prefix = |s: &str| match module {
-            Some(m) => format!("{m}::{s}"),
-            None => s.to_string(),
-        };
         Ok(match type_ {
             // Named-handle types that recurse without touching a RustBuffer.
             Type::Box { inner_type } => {
@@ -722,12 +720,15 @@ mod filters {
             Type::Float32 | Type::Float64 => format!("{nm}.to_f"),
             Type::Boolean => format!("1 == {nm}"),
             Type::Object { name, .. } => {
-                format!("{}.uniffi_lift({nm})", prefix(&class_name_rb_inner(name)?))
+                format!(
+                    "{}.uniffi_lift({nm})",
+                    qualify(&class_name_rb_inner(name)?, module)
+                )
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
                     "({}CallbackInterface{}FfiConverter.lift {nm})",
-                    prefix(""),
+                    qualify("", module),
                     class_name_rb_inner(name)?
                 )
             }

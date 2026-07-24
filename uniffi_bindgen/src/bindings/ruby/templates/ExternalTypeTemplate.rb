@@ -19,16 +19,10 @@ require '{{ import_name }}'
 {%- endmatch %}
 {%- when None %}
 {%- endmatch %}
-{%- when Type::Enum { name, module_path, .. } -%}
-{%- let ns = ci.namespace_for_module_path(module_path)? %}
-{{ self.add_require(ns) }}
-{%- when Type::Object { name, module_path, .. } -%}
-{%- let ns = ci.namespace_for_module_path(module_path)? %}
-{{ self.add_require(ns) }}
-{%- when Type::Record { module_path, .. } -%}
-{%- let ns = ci.namespace_for_module_path(module_path)? %}
-{{ self.add_require(ns) }}
-{%- when Type::CallbackInterface { module_path, .. } -%}
+{%- when Type::Enum { module_path, .. }
+ | Type::Object { module_path, .. }
+ | Type::Record { module_path, .. }
+ | Type::CallbackInterface { module_path, .. } -%}
 {%- let ns = ci.namespace_for_module_path(module_path)? %}
 {{ self.add_require(ns) }}
 {%- else %}
