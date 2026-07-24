@@ -20,6 +20,14 @@ require 'set'
 require 'monitor'
 {%- endif %}
 
+{%- for ext in self.external_mixin_modules() %}
+require '{{ ext.require_path }}'
+{%- endfor %}
+
+{%- for import_name in self.external_custom_type_imports() %}
+require '{{ import_name }}'
+{%- endfor %}
+
 module {{ ci.namespace()|class_name_rb }}
   {% include "Helpers.rb" %}
 
@@ -54,10 +62,6 @@ module {{ ci.namespace()|class_name_rb }}
   {%- endmatch %}
   {%- endfor %}
 
-  {%- for type_ in ci.iter_external_types() %}
-  {% include "ExternalTypeTemplate.rb" %}
-  {%- endfor %}
-
   # Public interface members begin here.
 
   {% for e in ci.enum_definitions() %}
@@ -84,9 +88,5 @@ module {{ ci.namespace()|class_name_rb }}
   {% endfor %}
 
 end
-
-{%- for path in self.requires() %}
-require '{{ path }}'
-{%- endfor %}
 
 {% import "macros.rb" as rb %}

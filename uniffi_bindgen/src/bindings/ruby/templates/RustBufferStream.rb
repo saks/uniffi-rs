@@ -1,26 +1,8 @@
-
-# Helper for structured reading of values from a RustBuffer.
-class RustBufferStream
-
-  def initialize(rbuf)
-    @rbuf = rbuf
-    @offset = 0
-  end
-
-  def remaining
-    @rbuf.len - @offset
-  end
-
-  def read(size)
-    raise InternalError, 'read past end of rust buffer' if @offset + size > @rbuf.len
-
-    data = @rbuf.data.get_bytes @offset, size
-
-    @offset += size
-
-    data
-  end
-
+# Mixin containing type-specific read methods for RustBufferStream.
+# Consuming crates include this module into their own RustBufferStream
+# so they can deserialize this crate's types directly, using the local
+# crate's buffer infrastructure (unpack_from, read, etc).
+module RustBufferStreamMixin
   {% for typ in ci.iter_local_types() -%}
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ -%}
@@ -346,24 +328,33 @@ class RustBufferStream
 
   {%- endmatch -%}
   {%- endfor %}
+end
 
-  {%- for typ in ci.iter_external_types() -%}
-  {%- let canonical_type_name = self::canonical_name(typ) -%}
-  {%- match typ %}
-  {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
-  # External type bridge: delegates read to external module
-  def read_{{ canonical_type_name }}
-    ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    ext_stream = ext_mod.const_get(:RustBufferStream).allocate
-    ext_stream.instance_variable_set(:@rbuf, @rbuf)
-    ext_stream.instance_variable_set(:@offset, @offset)
-    result = ext_stream.read_{{ canonical_type_name }}
-    @offset = ext_stream.instance_variable_get(:@offset)
-    result
-  end
-  {%- else %}
-  {%- endmatch %}
+# Helper for structured reading of values from a RustBuffer.
+class RustBufferStream
+  {%- for ext in self.external_mixin_modules() %}
+  include ::{{ ext.module_name }}::RustBufferStreamMixin
   {%- endfor %}
+  include RustBufferStreamMixin
+  
+  def initialize(rbuf)
+    @rbuf = rbuf
+    @offset = 0
+  end
+
+  def remaining
+    @rbuf.len - @offset
+  end
+
+  def read(size)
+    raise InternalError, 'read past end of rust buffer' if @offset + size > @rbuf.len
+
+    data = @rbuf.data.get_bytes @offset, size
+
+    @offset += size
+
+    data
+  end
 
   def unpack_from(size, format)
     raise InternalError, 'read past end of rust buffer' if @offset + size > @rbuf.len

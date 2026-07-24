@@ -1,32 +1,10 @@
-
-# Helper for structured writing of values into a RustBuffer.
-class RustBufferBuilder
-  def initialize
-    @rust_buf = RustBuffer.alloc 16
-    @rust_buf.len = 0
-  end
-
-  def finalize
-    rbuf = @rust_buf
-
-    @rust_buf = nil
-
-    rbuf
-  end
-
-  def discard
-    return if @rust_buf.nil?
-
-    rbuf = finalize
-    rbuf.free
-  end
-
-  def write(value)
-    reserve(value.bytes.size) do
-      @rust_buf.data.put_array_of_char @rust_buf.len, value.bytes
-    end
-  end
-
+# Mixin containing type-specific write methods.
+# Consuming crates include this module into their own RustBufferBuilder
+# so they can serialize this crates's types directly, using the local 
+# crates's buffer infrastructure (pack_into, reserve).
+# This insures buffer growth always routes through the local crate's
+# RustBuffer allocator.
+module RustBufferBuilderMixin
   {% for typ in ci.iter_local_types() -%}
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ -%}
@@ -311,64 +289,47 @@ class RustBufferBuilder
 
   {%- endmatch -%}
   {%- endfor %}
+end
 
-  {%- for typ in ci.iter_external_types() -%}
-  {%- let canonical_type_name = self::canonical_name(typ) -%}
-  {%- match typ %}
-  {%- when Type::Record { .. } | Type::Enum { .. } | Type::Custom { .. } | Type::Object { .. } | Type::CallbackInterface { .. } %}
-  # External type bridge: delegates write through a subclass that routes
-  # reserve through this shared library's allocator (see uniffi_bridge_builder_class).
-  def write_{{ canonical_type_name }}(v)
-    ext_mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    ext_builder = self.class.send(:uniffi_bridge_builder_class, ext_mod).allocate
-    # Inherit origin from enclosing bridge, or use local RustBuffer.
-    origin = instance_variable_get(:@uniffi_origin_rust_buffer_class) || RustBuffer
-    ext_builder.instance_variable_set(:@uniffi_origin_rust_buffer_class, origin)
-    ext_builder.instance_variable_set(:@rust_buf, @rust_buf)
-    begin
-      ext_builder.write_{{ canonical_type_name }}(v)
-    ensure
-      # Sync back on exception so cleanup uses the correct buffer.
-      @rust_buf = ext_builder.instance_variable_get(:@rust_buf)
-    end
-  end
-  {%- else %}
-  {%- endmatch %}
+# Helper for structured writing of values into a RustBuffer.
+class RustBufferBuilder
+
+  {%- for ext in self.external_mixin_modules() %}
+  include ::{{ ext.module_name }}::RustBufferBuilderMixin
   {%- endfor %}
+  include RustBufferBuilderMixin
 
-  # Each shared library has its own global allocator: a buffer allocated by
-  # one shared library must be freed and grown by that same shared library
-  # (see uniffi_core's rustbuffer.rs for the invariant).  When writing an
-  # external type into a locally-owned buffer, the external module's
-  # RustBufferBuilder would normally call its own `RustBuffer.reserve`,
-  # which routes to the foreign shared library's allocator — undefined
-  # behavior.
-  #
-  # This method caches subclasses of foreign RustBufferBuilders that
-  # override `reserve_buffer_class` to return the origin `RustBuffer`
-  # class (the one that owns the buffer memory).  The origin is propagated
-  # through `@uniffi_origin_rust_buffer_class` so that transitive external
-  # types also route reserve to the original allocator, not an intermediate
-  # crate's.
-  def self.uniffi_bridge_builder_class(ext_mod)
-    @uniffi_bridge_builders ||= {}
-    @uniffi_bridge_builders[ext_mod] ||= Class.new(ext_mod.const_get(:RustBufferBuilder)) do
-      define_method(:reserve_buffer_class) do
-        @uniffi_origin_rust_buffer_class
-      end
+  def initialize
+    @rust_buf = RustBuffer.alloc 16
+    @rust_buf.len = 0
+  end
+
+  def finalize
+    rbuf = @rust_buf
+
+    @rust_buf = nil
+
+    rbuf
+  end
+
+  def discard
+    return if @rust_buf.nil?
+
+    rbuf = finalize
+    rbuf.free
+  end
+
+  def write(value)
+    reserve(value.bytes.size) do
+      @rust_buf.data.put_array_of_char @rust_buf.len, value.bytes
     end
   end
-  private_class_method :uniffi_bridge_builder_class
 
   private
 
-  def reserve_buffer_class
-    RustBuffer
-  end
-
   def reserve(num_bytes)
     if @rust_buf.len + num_bytes > @rust_buf.capacity
-      @rust_buf = reserve_buffer_class.reserve(@rust_buf, num_bytes)
+      @rust_buf = RustBuffer.reserve(@rust_buf, num_bytes)
     end
 
     yield

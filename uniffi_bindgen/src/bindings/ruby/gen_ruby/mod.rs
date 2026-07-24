@@ -8,7 +8,6 @@ use askama::Template;
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::interface::{Enum, *};
@@ -19,6 +18,12 @@ const RESERVED_WORDS: &[&str] = &[
     "redo", "rescue", "retry", "return", "self", "super", "then", "true", "undef", "unless",
     "until", "when", "while", "yield", "__FILE__", "__LINE__",
 ];
+
+// Info for an external crate's mixin modules, used in tempaltes.
+pub struct ExternalMixin {
+    pub module_name: String,
+    pub require_path: String,
+}
 
 fn is_reserved_word(word: &str) -> bool {
     RESERVED_WORDS.contains(&word)
@@ -172,27 +177,10 @@ impl Config {
 pub struct RubyWrapper<'a> {
     config: Config,
     ci: &'a ComponentInterface,
-    requires: RefCell<BTreeSet<String>>,
 }
 impl<'a> RubyWrapper<'a> {
     pub fn new(config: Config, ci: &'a ComponentInterface) -> Self {
-        Self {
-            config,
-            ci,
-            requires: RefCell::new(BTreeSet::new()),
-        }
-    }
-
-    /// Add a `require` statement for an external module's binding file.
-    /// Returns an empty string so it can be used inside an askama `{{ }}` block.
-    pub fn add_require(&self, path: &str) -> &str {
-        self.requires.borrow_mut().insert(path.to_owned());
-        ""
-    }
-
-    /// Get the sorted, deduplicated list of require paths.
-    pub fn requires(&self) -> Vec<String> {
-        self.requires.borrow().iter().cloned().collect()
+        Self { config, ci }
     }
 
     /// Resolve the Ruby module name for an external type's crate.
@@ -205,6 +193,54 @@ impl<'a> RubyWrapper<'a> {
     /// Returns true if the module_path comes from a different crate.
     pub fn is_external_module(&self, module_path: &str) -> bool {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
+    }
+
+    /// Returns deduplicated list of external mixin info (module name + require path).
+    /// Used by wrapper.rb for `require` and RustBufferBuilder/Stream for `include`.
+    pub fn external_mixin_modules(&self) -> Vec<ExternalMixin> {
+        let mut seen = BTreeSet::new();
+        let mut result = Vec::new();
+
+        for typ in self.ci.iter_external_types() {
+            if let Some(module_path) = typ.module_path() {
+                let module_name = self.external_type_module(module_path);
+                if seen.insert(module_name.clone()) {
+                    let require_path = self
+                        .ci
+                        .namespace_for_module_path(module_path)
+                        .unwrap_or(module_path)
+                        .to_owned();
+
+                    result.push(ExternalMixin {
+                        module_name,
+                        require_path,
+                    });
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Returns deduplicated require paths declared by external custom type configs.
+    ///
+    /// This keeps wrapper.rb simple by doing all type/config matching in Rust.
+    pub fn external_custom_type_imports(&self) -> Vec<String> {
+        let mut imports = BTreeSet::new();
+
+        for typ in self.ci.iter_external_types() {
+            if let Type::Custom { name, .. } = typ {
+                if let Some(cfg) = self.config.custom_types.get(name.as_str()) {
+                    if let Some(extra_imports) = &cfg.imports {
+                        for import_name in extra_imports {
+                            imports.insert(import_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        imports.into_iter().collect()
     }
 
     /// Module prefix for lift/lower/check_lower of an external type, if any.
