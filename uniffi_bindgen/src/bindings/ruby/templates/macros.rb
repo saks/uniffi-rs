@@ -18,24 +18,15 @@ values[{{- field_num - 1 -}}]
 {%- endmacro -%}
 
 {#- Helper: emit the opening of a rust_call or rust_call_with_error call.
-    For error-throwing functions, passes the reader method symbol instead of
-    the class name — the specific read method is known at generation time,
-    so no runtime lookup table is needed.
+    The reader method symbol is computed by the Rust backend — see error_reader_symbol.
 -#}
 {%- macro rust_call_head(func) -%}
-    {%- match func.throws_type() -%}
-    {%- when Some(Type::Custom { builtin, .. }) -%}
-      {%- match builtin.borrow() -%}
-      {%- when Type::Enum { name, .. } | Type::Object { name, .. } -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(:read_Type{{ name }},
-      {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call
-      {%- endmatch -%}
-    {%- when Some(Type::Enum { name, .. }) | Some(Type::Object { name, .. }) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(:read_Type{{ name }},
-    {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call(
-    {%- endmatch -%}
+    {%- let reader = self.error_reader_symbol(func) %}
+    {%- if reader != "nil" %}
+    ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ reader }},
+    {%- else %}
+    ::{{ ci.namespace()|class_name_rb }}.rust_call(
+    {%- endif -%}
 {%- endmacro -%}
   
 {%- macro to_ffi_call(func) -%}
@@ -93,25 +84,6 @@ values[{{- field_num - 1 -}}]
     {%- if func.has_rust_call_status_arg() -%}RustCallStatus.by_ref{% endif -%}]
 {%- endmacro -%}
 
-{#- Helper: emit the reader method symbol for an error type (Enum | Object).
-    Both use `:read_Type{name}` — known at generation time, no module prefix needed.
--#}
-{%- macro throws_error_reader_expr(func) %}
-    {%- match func.throws_type() %}
-    {%- when Some(Type::Custom { builtin, .. }) %}
-      {%- match builtin.borrow() %}
-      {%- when Type::Enum { name, .. } | Type::Object { name, .. } %}
-      :read_Type{{ name }}
-      {%- else %}
-      nil
-      {%- endmatch %}
-    {%- when Some(Type::Enum { name, .. }) | Some(Type::Object { name, .. }) %}
-      :read_Type{{ name }}
-    {%- else %}
-      nil
-    {%- endmatch %}
-{%- endmacro %}
-
 {%- macro to_ffi_call_async(func, prefix = "") -%}
     ::{{ ci.namespace()|class_name_rb }}.uniffi_rust_call_async(
       UniFFILib.{{ func.ffi_func().name() }}(
@@ -128,7 +100,7 @@ values[{{- field_num - 1 -}}]
       {%- when None %}
       Proc.new { |v| nil },
       {%- endmatch %}
-      {%- call throws_error_reader_expr(func) %}{% endcall %}
+      {{ self.error_reader_symbol(func) }}
     )
 {%- endmacro %}
 
@@ -142,7 +114,7 @@ values[{{- field_num - 1 -}}]
       :{{ func.ffi_rust_future_complete(ci) }},
       :{{ func.ffi_rust_future_free(ci) }},
       Proc.new { |v| v },
-      {%- call throws_error_reader_expr(func) %}{% endcall %}
+      {{ self.error_reader_symbol(func) }}
     )
 {%- endmacro %}
 

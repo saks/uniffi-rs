@@ -90,7 +90,7 @@ private_constant :CALL_SUCCESS, :CALL_ERROR, :CALL_PANIC, :RustCallStatus
 
 def self.consume_buffer_into_error(reader_method, rust_buffer)
   rust_buffer.consumeWithStream do |stream|
-    return stream.send(reader_method)
+    return stream.public_send(reader_method)
   end
 end
 
