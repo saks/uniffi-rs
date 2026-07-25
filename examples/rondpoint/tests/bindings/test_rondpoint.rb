@@ -138,6 +138,57 @@ class TestRondpoint < Test::Unit::TestCase
     affirm_enchaine([0x0000000000000000, 0x1234567890ABCDEF, 0xFFFFFFFFFFFFFFFF], :to_string_u64)
   end
 
+  def test_optionneur
+    opt = Optionneur.new
+
+    # Default values
+    assert_equal 'default', opt.sinon_string
+    assert_equal false, opt.sinon_boolean
+    assert_equal [], opt.sinon_sequence
+    assert_nil opt.sinon_null
+    assert_equal 0, opt.sinon_zero
+
+    # Default int values (UDL-defined defaults)
+    assert_equal(-42, opt.sinon_i8_dec)
+    assert_equal 42, opt.sinon_u16_dec
+
+    # Override values
+    assert_equal 'hello', opt.sinon_string('hello')
+    assert_equal true, opt.sinon_boolean(true)
+    assert_equal ['a', 'b'], opt.sinon_sequence(['a', 'b'])
+
+    assert_equal 123, opt.sinon_i32_dec(123)
+    assert_equal 456, opt.sinon_i64_dec(456)
+  end
+
+  def test_dictionnaire_nombres
+    rt = Retourneur.new
+    d = DictionnaireNombres.new(
+      petit_nombre: 1,
+      court_nombre: 2,
+      nombre_simple: 3,
+      gros_nombre: 4
+    )
+    assert_equal d, rt.identique_nombres(d)
+  end
+
+  def test_dictionnaire_nombres_signes
+    rt = Retourneur.new
+    d = DictionnaireNombresSignes.new(
+      petit_nombre: -1,
+      court_nombre: -2,
+      nombre_simple: -3,
+      gros_nombre: -4
+    )
+    assert_equal d, rt.identique_nombres_signes(d)
+  end
+
+  def test_optionneur_dictionnaire
+    od = OptionneurDictionnaire.new
+    assert_equal(-8, od.i8_var)
+    assert_equal 8, od.u8_var
+  end
+
   # -- helpers --
 
   def affirm_aller_retour(vals, fn_name)

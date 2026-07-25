@@ -273,6 +273,156 @@ class TestCoverall < Test::Unit::TestCase
     end
   end
 
+  def test_flat_errors
+    err = assert_raise Coverall::CoverallFlatError::TooManyVariants do
+      Coverall.throw_flat_error
+    end
+    assert_equal err.message, 'Too many variants: 99'
+  end
+
+  def test_flat_macro_errors
+    err = assert_raise Coverall::CoverallFlatMacroError::TooManyVariants do
+      Coverall.throw_flat_macro_error
+    end
+    assert_equal err.message, 'Too many variants: 88'
+  end
+
+  def test_rich_error_no_variant_data
+    err = assert_raise Coverall::CoverallRichErrorNoVariantData::TooManyPlainVariants do
+      Coverall.throw_rich_error_no_variant_data
+    end
+  end
+
+  def test_macro_errors
+    err = assert_raise Coverall::CoverallMacroError::TooManyMacros do
+      Coverall.throw_macro_error
+    end
+    assert_equal err.message, 'The coverall has too many macros'
+  end
+
+  def test_complex_macro_errors
+    err = assert_raise Coverall::ComplexMacroError::OsError do
+      Coverall.throw_complex_macro_error
+    end
+    assert_equal err.code, 1
+    assert_equal err.extended_code, 2
+  end
+
+  def test_error_values
+    begin
+      Coverall.throw_root_error
+    rescue Coverall::RootError::Complex => err
+      assert_equal err.error.code, 1
+    else
+      raise 'should have thrown'
+    end
+
+    e = Coverall.get_root_error
+    assert_equal e.error, Coverall::OtherError::UNEXPECTED
+
+    result = Coverall.get_complex_error(nil)
+    assert_true result.is_a?(Coverall::ComplexError::PermissionDenied)
+
+    d = Coverall.get_error_dict(nil)
+    assert_nil d.complex_error
+  end
+
+  def test_enums
+    e = Coverall.get_simple_flat_macro_enum(0)
+    assert_true e.is_a?(Coverall::SimpleFlatMacroEnum::FIRST)
+
+    sd = Coverall.get_maybe_simple_dict(0)
+    assert_true sd.yeah?
+    assert_equal sd.d.text, ''
+
+    sd2 = Coverall.get_maybe_simple_dict(1)
+    assert_true sd2.nah?
+
+    mo = Coverall.get_maybe_object(0)
+    assert_true mo.obj?
+    assert_equal mo.p.get_color, Coverall::Color::RED
+
+    mo2 = Coverall.get_maybe_object(1)
+    assert_true mo2.nah?
+  end
+
+  def test_dict_with_defaults
+    d = Coverall::DictWithDefaults.new
+    assert_equal 'default-value', d.name
+    assert_nil d.category
+    assert_equal 31, d.integer
+    assert_equal [], d.item_list
+    assert_equal({}, d.item_map)
+
+    d2 = Coverall::DictWithDefaults.new(name: 'this', category: 'that', integer: 42)
+    assert_equal 'this', d2.name
+    assert_equal 'that', d2.category
+    assert_equal 42, d2.integer
+  end
+
+  def test_dict_with_non_string_keys
+    coveralls = Coverall::Coveralls.new 'test_dict'
+
+    dict1 = coveralls.get_dict('answer', 42)
+    assert_equal 42, dict1['answer']
+
+    dict2 = coveralls.get_dict2('answer', 42)
+    assert_equal 42, dict2['answer']
+
+    dict3 = coveralls.get_dict3(31, 42)
+    assert_equal 42, dict3[31]
+  end
+
+  def test_return_only_dict
+    err_instance = Coverall::CoverallFlatError::TooManyVariants.new("99")
+    assert_raise Coverall::InternalError do
+      Coverall.try_input_return_only_dict(Coverall::ReturnOnlyDict.new(e: err_instance))
+    end
+  end
+
+  def test_throwing_constructors
+    assert_raise Coverall::CoverallError::TooManyHoles do
+      Coverall::FalliblePatch.new
+    end
+    assert_raise Coverall::CoverallError::TooManyHoles do
+      Coverall::FalliblePatch.secondary
+    end
+  end
+
+  def test_patches_and_repairs
+    coveralls = Coverall::Coveralls.new 'test_patches_and_repairs'
+    coveralls.add_patch Coverall::Patch.new(Coverall::Color::RED)
+    coveralls.add_repair Coverall::Repair.new(
+      _when: Time.now,
+      patch: Coverall::Patch.new(Coverall::Color::BLUE)
+    )
+    assert_equal 2, coveralls.get_repairs.length
+  end
+
+  def test_return_objects_with_repairs
+    coveralls = Coverall::Coveralls.new 'test_return_objects'
+    assert_equal 1, Coverall.get_num_alive
+    assert_equal 2, coveralls.strong_count
+
+    c2 = coveralls.clone_me
+    assert_equal c2.get_name, coveralls.get_name
+    assert_equal 2, Coverall.get_num_alive
+    assert_equal 2, c2.strong_count
+
+    coveralls.take_other c2
+    assert_equal 2, Coverall.get_num_alive
+    assert_equal 2, coveralls.strong_count
+    assert_equal 3, c2.strong_count
+
+    c2 = nil
+    GC.start
+    assert_equal 2, Coverall.get_num_alive
+
+    coveralls = nil
+    GC.start
+    assert_equal 0, Coverall.get_num_alive
+  end
+
   def test_bytes
     coveralls = Coverall::Coveralls.new "test_bytes"
     assert_equal coveralls.reverse("123"), "321"
