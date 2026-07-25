@@ -403,10 +403,10 @@ mod filters {
     }
 
     fn default_rb_inner(default: &DefaultValue) -> Result<String, askama::Error> {
-        let DefaultValue::Literal(literal) = default else {
-            unimplemented!("not supported.");
-        };
-        literal_rb_inner(literal)
+        match default {
+            DefaultValue::Literal(literal) => literal_rb_inner(literal),
+            DefaultValue::Default => Ok("nil".into()),
+        }
     }
 
     fn literal_rb_inner(literal: &Literal) -> Result<String, askama::Error> {
