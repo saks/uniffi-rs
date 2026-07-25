@@ -37,7 +37,7 @@ end
 # cancel_fn is called in the ensure block when exception interrupts an in-flight poll.
 # This guarantees Rust fires the continuation callback so the handle-map entry is released
 # and the pipe is drained before we free the future.
-def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, free_fn, lift_func, error_class)
+def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, free_fn, lift_func, error_reader)
   rd = wr = nil
   handle = nil
   poll_in_flight = false
@@ -61,10 +61,10 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, fr
       break if poll_code == UNIFFI_RUST_FUTURE_POLL_READY
     end
 
-    result = if error_class.nil?
+    result = if error_reader.nil?
       ::{{ ci.namespace()|class_name_rb }}.rust_call(complete_fn, rust_future)
     else
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(error_class, complete_fn, rust_future)
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(error_reader, complete_fn, rust_future)
     end
 
     lift_func.call(result)

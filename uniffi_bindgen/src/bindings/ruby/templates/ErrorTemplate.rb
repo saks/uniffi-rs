@@ -88,11 +88,8 @@ end
 
 private_constant :CALL_SUCCESS, :CALL_ERROR, :CALL_PANIC, :RustCallStatus
 
-def self.consume_buffer_into_error(error_class, rust_buffer)
+def self.consume_buffer_into_error(reader_method, rust_buffer)
   rust_buffer.consumeWithStream do |stream|
-    reader_method = ERROR_READER_METHODS.fetch(error_class) { |n|
-      raise InternalError, "Unknown error type: #{n}"
-    }
     return stream.send(reader_method)
   end
 end
@@ -104,7 +101,7 @@ def self.rust_call(fn_name, *args)
   rust_call_with_error(nil, fn_name, *args)
 end
 
-def self.rust_call_with_error(error_class, fn_name, *args)
+def self.rust_call_with_error(error_reader, fn_name, *args)
   status = RustCallStatus.new
   args << status
 
@@ -114,11 +111,11 @@ def self.rust_call_with_error(error_class, fn_name, *args)
   when CALL_SUCCESS
     result
   when CALL_ERROR
-    if error_class.nil?
+    if error_reader.nil?
       status.error_buf.free
-      raise InternalError, "CALL_ERROR with no error_class set"
+      raise InternalError, "CALL_ERROR with no error_reader set"
     end
-    raise consume_buffer_into_error(error_class, status.error_buf)
+    raise consume_buffer_into_error(error_reader, status.error_buf)
   when CALL_PANIC
     if status.error_buf.len > 0
       raise InternalError, {{ self.lift_rb("status.error_buf", &Type::String) }}

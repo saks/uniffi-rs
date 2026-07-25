@@ -17,26 +17,22 @@ values[{{- field_num - 1 -}}]
 {%- endif -%}
 {%- endmacro -%}
 
-{#- Helper: emit the opening of a rust_call or rust_call_with_error call. -#}
+{#- Helper: emit the opening of a rust_call or rust_call_with_error call.
+    For error-throwing functions, passes the reader method symbol instead of
+    the class name — the specific read method is known at generation time,
+    so no runtime lookup table is needed.
+-#}
 {%- macro rust_call_head(func) -%}
     {%- match func.throws_type() -%}
     {%- when Some(Type::Custom { builtin, .. }) -%}
       {%- match builtin.borrow() -%}
-      {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } -%}
-      {%- if self.is_external_module(module_path) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }},
-      {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
-      {%- endif -%}
+      {%- when Type::Enum { name, .. } | Type::Object { name, .. } -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(:read_Type{{ name }},
       {%- else -%}
       ::{{ ci.namespace()|class_name_rb }}.rust_call
       {%- endmatch -%}
-    {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) -%}
-      {%- if self.is_external_module(module_path) -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }},
-      {%- else -%}
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ name|class_name_rb }},
-      {%- endif -%}
+    {%- when Some(Type::Enum { name, .. }) | Some(Type::Object { name, .. }) -%}
+      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(:read_Type{{ name }},
     {%- else -%}
       ::{{ ci.namespace()|class_name_rb }}.rust_call(
     {%- endmatch -%}
@@ -97,27 +93,20 @@ values[{{- field_num - 1 -}}]
     {%- if func.has_rust_call_status_arg() -%}RustCallStatus.by_ref{% endif -%}]
 {%- endmacro -%}
 
-{#- Helper: emit the error class constant for a concrete error type (Enum | Object). -#}
-{%- macro error_class_expr_args(name, module_path) %}
-      {%- if self.is_external_module(module_path) %}
-      ::{{ self.external_type_module(module_path) }}::{{ name|class_name_rb }}
-      {%- else %}
-      {{ name|class_name_rb }}
-      {%- endif %}
-{%- endmacro %}
-
-{#- Helper: emit the error class constant for async rust calls. -#}
-{%- macro throws_error_class_expr(func) %}
+{#- Helper: emit the reader method symbol for an error type (Enum | Object).
+    Both use `:read_Type{name}` — known at generation time, no module prefix needed.
+-#}
+{%- macro throws_error_reader_expr(func) %}
     {%- match func.throws_type() %}
     {%- when Some(Type::Custom { builtin, .. }) %}
       {%- match builtin.borrow() %}
-      {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
-      {%- call error_class_expr_args(name, module_path) %}{% endcall %}
+      {%- when Type::Enum { name, .. } | Type::Object { name, .. } %}
+      :read_Type{{ name }}
       {%- else %}
       nil
       {%- endmatch %}
-    {%- when Some(Type::Enum { name, module_path, .. }) | Some(Type::Object { name, module_path, .. }) %}
-      {%- call error_class_expr_args(name, module_path) %}{% endcall %}
+    {%- when Some(Type::Enum { name, .. }) | Some(Type::Object { name, .. }) %}
+      :read_Type{{ name }}
     {%- else %}
       nil
     {%- endmatch %}
@@ -139,11 +128,10 @@ values[{{- field_num - 1 -}}]
       {%- when None %}
       Proc.new { |v| nil },
       {%- endmatch %}
-      {%- call throws_error_class_expr(func) %}{% endcall %}
+      {%- call throws_error_reader_expr(func) %}{% endcall %}
     )
 {%- endmacro %}
 
-{#- Async constructor variant: uses identity lift to return raw handle for uniffi_allocate -#}
 {%- macro to_ffi_call_async_constructor(func) %}
     ::{{ ci.namespace()|class_name_rb }}.uniffi_rust_call_async(
       UniFFILib.{{ func.ffi_func().name() }}(
@@ -154,7 +142,7 @@ values[{{- field_num - 1 -}}]
       :{{ func.ffi_rust_future_complete(ci) }},
       :{{ func.ffi_rust_future_free(ci) }},
       Proc.new { |v| v },
-      {%- call throws_error_class_expr(func) %}{% endcall %}
+      {%- call throws_error_reader_expr(func) %}{% endcall %}
     )
 {%- endmacro %}
 
