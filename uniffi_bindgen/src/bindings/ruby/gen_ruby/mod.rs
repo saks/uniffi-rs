@@ -19,7 +19,7 @@ const RESERVED_WORDS: &[&str] = &[
     "until", "when", "while", "yield", "__FILE__", "__LINE__",
 ];
 
-// Info for an external crate's mixin modules, used in tempaltes.
+// Info for an external crate's mixin modules, used in templates.
 pub struct ExternalMixin {
     pub module_name: String,
     pub require_path: String,
@@ -654,7 +654,7 @@ mod filters {
                 if let Some(cfg) = config.custom_types.get(name) {
                     if let Some(type_name) = &cfg.type_name {
                         format!(
-                            "raise TypeError, \"Expected {type_name}, got {{#{nm}.class}}\" unless {nm}.is_a?({type_name})"
+                            "raise TypeError, \"Expected {type_name}, got #{{{nm}.class}}\" unless {nm}.is_a?({type_name})"
                         )
                     } else {
                         String::new()

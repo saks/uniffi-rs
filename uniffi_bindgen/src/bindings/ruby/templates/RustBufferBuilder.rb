@@ -1,8 +1,8 @@
 # Mixin containing type-specific write methods.
 # Consuming crates include this module into their own RustBufferBuilder
-# so they can serialize this crates's types directly, using the local 
+# so they can serialize this crate's types directly, using the local 
 # crates's buffer infrastructure (pack_into, reserve).
-# This insures buffer growth always routes through the local crate's
+# This ensures buffer growth always routes through the local crate's
 # RustBuffer allocator.
 module RustBufferBuilderMixin
   {% for typ in ci.iter_local_types() -%}
