@@ -402,14 +402,14 @@ mod filters {
         Ok(method.foreign_future_ffi_result_struct().name().to_string())
     }
 
-    fn default_rb_inner(default: &DefaultValue) -> Result<String, askama::Error> {
+    fn default_rb_inner(default: &DefaultValue, ty: &Type) -> Result<String, askama::Error> {
         match default {
-            DefaultValue::Literal(literal) => literal_rb_inner(literal),
-            DefaultValue::Default => Ok("nil".into()),
+            DefaultValue::Literal(lit) => literal_rb_inner(lit, ty),
+            DefaultValue::Default => type_zero_value_rb(ty),
         }
     }
 
-    fn literal_rb_inner(literal: &Literal) -> Result<String, askama::Error> {
+    fn literal_rb_inner(literal: &Literal, ty: &Type) -> Result<String, askama::Error> {
         Ok(match literal {
             Literal::Boolean(v) => {
                 if *v {
@@ -421,7 +421,31 @@ mod filters {
             // use the double-quote form to match with the other languages, and quote escapes.
             Literal::String(s) => format!("\"{s}\""),
             Literal::None => "nil".into(),
-            Literal::Some { inner } => default_rb_inner(inner)?,
+            Literal::Some { inner } => {
+                let inner_ty = match ty {
+                    Type::Optional { inner_type } => inner_type.as_ref(),
+                    // Peel Custom wrappers — the metadata construction already validated
+                    // that the builtin is Optional; match type_zero_value_rb's convention.
+                    Type::Custom { builtin, .. } => match builtin.as_ref() {
+                        Type::Optional { inner_type } => inner_type.as_ref(),
+                        other => {
+                            return Err(askama::Error::Custom(
+                                anyhow::anyhow!(
+                                    "Expected Optional type for Some literal, got {other:?}"
+                                )
+                                .into(),
+                            ));
+                        }
+                    },
+                    _ => {
+                        return Err(askama::Error::Custom(
+                            anyhow::anyhow!("Expected Optional type for Some literal, got {ty:?}")
+                                .into(),
+                        ));
+                    }
+                };
+                default_rb_inner(inner, inner_ty)?
+            }
             Literal::EmptySequence => "[]".into(),
             Literal::EmptyMap => "{}".into(),
             Literal::EmptySet => "Set.new".into(),
@@ -486,11 +510,7 @@ mod filters {
         _: &dyn askama::Values,
     ) -> Result<String, askama::Error> {
         match field.default_value() {
-            Some(DefaultValue::Default) => {
-                let ty = field.as_type();
-                type_zero_value_rb(&ty)
-            }
-            Some(DefaultValue::Literal(lit)) => literal_rb_inner(lit),
+            Some(default) => default_rb_inner(default, &field.as_type()),
             None => Err(askama::Error::Custom(
                 anyhow::anyhow!("field_default_rb called on field with no default value").into(),
             )),
@@ -501,8 +521,7 @@ mod filters {
     #[askama::filter_fn]
     pub fn arg_default_rb(arg: &Argument, _: &dyn askama::Values) -> Result<String, askama::Error> {
         match arg.default_value() {
-            Some(DefaultValue::Default) => type_zero_value_rb(&arg.as_type()),
-            Some(DefaultValue::Literal(lit)) => literal_rb_inner(lit),
+            Some(default) => default_rb_inner(default, &arg.as_type()),
             None => Err(askama::Error::Custom(
                 anyhow::anyhow!("arg_default_rb called on arg with no default value").into(),
             )),
