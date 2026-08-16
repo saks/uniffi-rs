@@ -279,7 +279,41 @@ impl<'a> RubyWrapper<'a> {
         }
     }
 
+    /// Defining crate module and builtin for an imported custom type.
+    ///
+    /// Top-level custom types use the builtin FFI layout (a raw string buffer
+    /// for Url, a primitive for numeric aliases). Lift/lower therefore peel to
+    /// the builtin and apply the *defining* crate's converter — not a
+    /// consumer-side `custom_types` copy, and not the length-prefixed mixin
+    /// used when the same type is nested in a record or sequence.
+    fn external_custom<'b>(&self, type_: &'b Type) -> Option<(String, &'b Type)> {
+        match type_ {
+            Type::Box { inner_type } => self.external_custom(inner_type),
+            Type::Custom {
+                module_path,
+                builtin,
+                ..
+            } if self.is_external_module(module_path) => {
+                Some((self.external_type_module(module_path), builtin.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_external_custom(&self, type_: &Type) -> bool {
+        self.external_custom(type_).is_some()
+    }
+
     pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
+        if let Some((module, builtin)) = self.external_custom(type_) {
+            let builtin_lift =
+                filters::lift_rb_inner_dispatch(nm, builtin, &self.config.custom_types, None)
+                    .expect("lift_rb builtin for external custom type failed");
+            return format!(
+                "{module}.uniffi_lift_{}({builtin_lift})",
+                canonical_name(type_)
+            );
+        }
         let module = self.ffi_module_prefix(type_);
         filters::lift_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
             .expect("lift_rb_inner_dispatch failed")
@@ -287,6 +321,16 @@ impl<'a> RubyWrapper<'a> {
 
     pub fn lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
         let nm = nm.as_ref();
+        if let Some((module, builtin)) = self.external_custom(type_) {
+            let lowered = format!("{module}.uniffi_lower_{}({nm})", canonical_name(type_));
+            return filters::lower_rb_inner_dispatch(
+                &lowered,
+                builtin,
+                &self.config.custom_types,
+                None,
+            )
+            .expect("lower_rb builtin for external custom type failed");
+        }
         let module = self.ffi_module_prefix(type_);
         filters::lower_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
             .expect("lower_rb_inner_dispatch failed")
@@ -294,9 +338,21 @@ impl<'a> RubyWrapper<'a> {
 
     pub fn check_lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
         let nm = nm.as_ref();
+        if let Some((module, _)) = self.external_custom(type_) {
+            return format!(
+                "{module}.uniffi_check_lower_{}({nm})",
+                canonical_name(type_)
+            );
+        }
         let module = self.ffi_module_prefix(type_);
         filters::check_lower_rb_inner(nm, type_, &self.config, module.as_deref())
             .expect("check_lower_rb_inner failed")
+    }
+
+    pub fn coerce_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
+        let ns = class_name_rb_inner(self.ci.namespace()).expect("namespace class name");
+        filters::coerce_rb_inner(nm, ns, type_, &self.config.custom_types, self)
+            .expect("coerce_rb failed")
     }
 
     pub fn field_default_rb(&self, field: &Field) -> String {
@@ -587,22 +643,12 @@ mod filters {
         Ok(nm.to_string().to_shouty_snake_case())
     }
 
-    #[askama::filter_fn]
-    pub fn coerce_rb<S1: AsRef<str>, S2: AsRef<str>>(
-        nm: S1,
-        _: &dyn askama::Values,
-        ns: S2,
-        type_: &Type,
-        config: &Config,
-    ) -> Result<String, askama::Error> {
-        coerce_rb_inner(nm, ns, type_, &config.custom_types)
-    }
-
     pub fn coerce_rb_inner<S1: AsRef<str>, S2: AsRef<str>>(
         nm: S1,
         ns: S2,
         type_: &Type,
         custom_types: &HashMap<String, CustomTypeConfig>,
+        wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
         let nm = nm.as_ref();
         let ns = ns.as_ref();
@@ -629,11 +675,11 @@ mod filters {
             Type::Optional { inner_type: t } => {
                 format!(
                     "({nm} ? {} : nil)",
-                    coerce_rb_inner(nm, ns, t, custom_types)?
+                    coerce_rb_inner(nm, ns, t, custom_types, wrapper)?
                 )
             }
             Type::Sequence { inner_type: t } => {
-                let coerce_code = coerce_rb_inner("v", ns, t, custom_types)?;
+                let coerce_code = coerce_rb_inner("v", ns, t, custom_types, wrapper)?;
                 if coerce_code == "v" {
                     nm.to_string()
                 } else {
@@ -641,7 +687,7 @@ mod filters {
                 }
             }
             Type::Set { inner_type: t } => {
-                let coerce_code = coerce_rb_inner("v", ns, t, custom_types)?;
+                let coerce_code = coerce_rb_inner("v", ns, t, custom_types, wrapper)?;
                 if coerce_code == "v" {
                     nm.to_string()
                 } else {
@@ -652,8 +698,8 @@ mod filters {
                 key_type: kt,
                 value_type: vt,
             } => {
-                let k_coerce_code = coerce_rb_inner("k", ns, kt, custom_types)?;
-                let v_coerce_code = coerce_rb_inner("v", ns, vt, custom_types)?;
+                let k_coerce_code = coerce_rb_inner("k", ns, kt, custom_types, wrapper)?;
+                let v_coerce_code = coerce_rb_inner("v", ns, vt, custom_types, wrapper)?;
 
                 if k_coerce_code == "k" && v_coerce_code == "v" {
                     nm.to_string()
@@ -663,14 +709,14 @@ mod filters {
                     )
                 }
             }
-            Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type, custom_types)?,
+            Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type, custom_types, wrapper)?,
             Type::Custom { name, builtin, .. } => {
-                // For config-backed custom types, the user passes a custom-typed values;
-                // skip builtin coercion (the lower expression handles conversion).
-                if custom_types.contains_key(name) {
+                // Config-backed or imported buffer-backed custom types are
+                // already the foreign value; skip builtin coercion.
+                if custom_types.contains_key(name) || wrapper.is_external_custom(type_) {
                     nm.to_string()
                 } else {
-                    coerce_rb_inner(nm, ns, builtin, custom_types)?
+                    coerce_rb_inner(nm, ns, builtin, custom_types, wrapper)?
                 }
             }
         })

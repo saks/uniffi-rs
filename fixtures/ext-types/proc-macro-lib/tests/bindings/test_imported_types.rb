@@ -54,6 +54,19 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_equal [url, nil], ImportedTypesLib.get_maybe_urls([url, nil])
   end
 
+  # Imported Url must be a URI on both the top-level FFI path (get_url) and
+  # nested mixin paths (get_urls, CombinedType), without a consumer-side
+  # custom_types.Url copy.
+  def test_imported_url_is_uri
+    url = URI.parse('http://example.com/')
+
+    assert_kind_of URI, ImportedTypesLib.get_url(url)
+    assert_kind_of URI, ImportedTypesLib.get_urls([url]).fetch(0)
+
+    ct = ImportedTypesLib.get_combined_type(nil)
+    assert_kind_of URI, ct.url
+  end
+
   def test_uniffi_one_enum
     e = UniffiOneNs::UniffiOneEnum::ONE
     result = ImportedTypesLib.get_uniffi_one_enum(e)
