@@ -72,7 +72,7 @@ values[{{- field_num - 1 -}}]
     {%- for arg in func.arguments() -%}
         {{ arg.name()|var_name_rb }}
         {%- match arg.default_value() %}
-        {%- when Some(_) %} = {{ arg|arg_default_rb }}
+        {%- when Some(_) %} = {{ self.arg_default_rb(arg) }}
         {%- else %}
         {%- endmatch %}
         {%- if !loop.last %}, {% endif -%}

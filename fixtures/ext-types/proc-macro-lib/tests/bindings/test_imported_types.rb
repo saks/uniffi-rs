@@ -78,6 +78,13 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_nil ImportedTypesLib.get_uniffi_one_trait(nil)
   end
 
+  # Default of an external record; walks into types in external crates, #2441
+  def test_record_containing_interface
+    rec = ImportedTypesLib::RecordContainingInterface.new
+
+    assert_instance_of UniffiOneNs::UniffiOneRecordContainingInterface, rec.inner
+  end
+
   def test_async_external_types
     assert_equal UniffiOneNs::UniffiOneEnum::ONE, UniffiOneNs.get_uniffi_one_async
     uot = UniffiOneNs::UniffiOneType.new(sval: 'hello')

@@ -298,6 +298,41 @@ impl<'a> RubyWrapper<'a> {
         filters::check_lower_rb_inner(nm, type_, &self.config, module.as_deref())
             .expect("check_lower_rb_inner failed")
     }
+
+    pub fn field_default_rb(&self, field: &Field) -> String {
+        match field.default_value() {
+            Some(default) => filters::default_rb_inner(default, &field.as_type(), self)
+                .expect("field_default_rb failed"),
+            None => panic!("field_default_rb called on field with no default value"),
+        }
+    }
+
+    pub fn arg_default_rb(&self, arg: &Argument) -> String {
+        match arg.default_value() {
+            Some(default) => filters::default_rb_inner(default, &arg.as_type(), self)
+                .expect("arg_default_rb failed"),
+            None => panic!("arg_default_rb called on arg with no default value"),
+        }
+    }
+
+    /// Module prefix for a Ruby *class name* of this type, if it lives in another crate.
+    ///
+    /// Unlike `ffi_module_prefix`, this applies to records and enums as well: defaults
+    /// construct Ruby objects by class name and do not go through the local RustBuffer.
+    pub(crate) fn type_class_module(&self, type_: &Type) -> Option<String> {
+        match type_ {
+            Type::Box { inner_type } => self.type_class_module(inner_type),
+            Type::Custom { builtin, .. } => self.type_class_module(builtin),
+            Type::Record { module_path, .. }
+            | Type::Object { module_path, .. }
+            | Type::Enum { module_path, .. }
+                if self.is_external_module(module_path) =>
+            {
+                Some(self.external_type_module(module_path))
+            }
+            _ => None,
+        }
+    }
 }
 
 fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
@@ -402,14 +437,22 @@ mod filters {
         Ok(method.foreign_future_ffi_result_struct().name().to_string())
     }
 
-    fn default_rb_inner(default: &DefaultValue, ty: &Type) -> Result<String, askama::Error> {
+    pub(super) fn default_rb_inner(
+        default: &DefaultValue,
+        ty: &Type,
+        wrapper: &RubyWrapper<'_>,
+    ) -> Result<String, askama::Error> {
         match default {
-            DefaultValue::Literal(lit) => literal_rb_inner(lit, ty),
-            DefaultValue::Default => type_zero_value_rb(ty),
+            DefaultValue::Literal(lit) => literal_rb_inner(lit, ty, wrapper),
+            DefaultValue::Default => type_zero_value_rb(ty, wrapper),
         }
     }
 
-    fn literal_rb_inner(literal: &Literal, ty: &Type) -> Result<String, askama::Error> {
+    fn literal_rb_inner(
+        literal: &Literal,
+        ty: &Type,
+        wrapper: &RubyWrapper<'_>,
+    ) -> Result<String, askama::Error> {
         Ok(match literal {
             Literal::Boolean(v) => {
                 if *v {
@@ -444,14 +487,21 @@ mod filters {
                         ));
                     }
                 };
-                default_rb_inner(inner, inner_ty)?
+                default_rb_inner(inner, inner_ty, wrapper)?
             }
             Literal::EmptySequence => "[]".into(),
             Literal::EmptyMap => "{}".into(),
             Literal::EmptySet => "Set.new".into(),
             Literal::Enum(v, type_) => match type_ {
                 Type::Enum { name, .. } => {
-                    format!("{}::{}", class_name_rb_inner(name)?, enum_name_rb_inner(v)?)
+                    format!(
+                        "{}::{}",
+                        qualify(
+                            &class_name_rb_inner(name)?,
+                            wrapper.type_class_module(type_).as_deref()
+                        ),
+                        enum_name_rb_inner(v)?
+                    )
                 }
                 _ => panic!("Unexpected type in enum literal: {type_:?}"),
             },
@@ -471,7 +521,7 @@ mod filters {
     }
 
     /// Return the Ruby zero/default value for a type (used for `#[uniffi::default]`).
-    fn type_zero_value_rb(ty: &Type) -> Result<String, askama::Error> {
+    fn type_zero_value_rb(ty: &Type, wrapper: &RubyWrapper<'_>) -> Result<String, askama::Error> {
         Ok(match ty {
             Type::Int8
             | Type::UInt8
@@ -489,43 +539,25 @@ mod filters {
             Type::Bytes => "\"\".b".to_string(),
             Type::Map { .. } => "{}".to_string(),
             Type::Set { .. } => "Set.new".to_string(),
-            // Named types with no-arg constructors
+            // Named types with no-arg constructors. Qualify external crates so
+            // Ruby does not look the class up inside the consumer module.
             Type::Record { name, .. } | Type::Object { name, .. } => {
-                format!("{}.new", class_name_rb_inner(name)?)
+                format!(
+                    "{}.new",
+                    qualify(
+                        &class_name_rb_inner(name)?,
+                        wrapper.type_class_module(ty).as_deref()
+                    )
+                )
             }
             // Custom types delegate to their underlying builtin
-            Type::Custom { builtin, .. } => type_zero_value_rb(builtin)?,
+            Type::Custom { builtin, .. } => type_zero_value_rb(builtin, wrapper)?,
             _ => {
                 return Err(askama::Error::Custom(
                     anyhow::anyhow!("No zero value for type {ty:?}").into(),
                 ))
             }
         })
-    }
-
-    /// Render the Ruby default value for a field, handling both `Default` and `Literal` variants.
-    #[askama::filter_fn]
-    pub fn field_default_rb(
-        field: &Field,
-        _: &dyn askama::Values,
-    ) -> Result<String, askama::Error> {
-        match field.default_value() {
-            Some(default) => default_rb_inner(default, &field.as_type()),
-            None => Err(askama::Error::Custom(
-                anyhow::anyhow!("field_default_rb called on field with no default value").into(),
-            )),
-        }
-    }
-
-    /// Render the Ruby default value for a function/method argument.
-    #[askama::filter_fn]
-    pub fn arg_default_rb(arg: &Argument, _: &dyn askama::Values) -> Result<String, askama::Error> {
-        match arg.default_value() {
-            Some(default) => default_rb_inner(default, &arg.as_type()),
-            None => Err(askama::Error::Custom(
-                anyhow::anyhow!("arg_default_rb called on arg with no default value").into(),
-            )),
-        }
     }
 
     #[askama::filter_fn]
