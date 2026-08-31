@@ -1,10 +1,17 @@
 # Mixin containing type-specific write methods.
 # Consuming crates include this module into their own RustBufferBuilder
-# so they can serialize this crate's types directly, using the local 
-# crates's buffer infrastructure (pack_into, reserve).
+# so they can serialize this crate's types directly, using the local
+# crate's buffer infrastructure (pack_into, reserve).
 # This ensures buffer growth always routes through the local crate's
 # RustBuffer allocator.
+#
+# Dependency mixins are included here (not on the Builder class) so the
+# mixin is closed over nested types from further crates. See
+# RustBufferStreamMixin.
 module RustBufferBuilderMixin
+  {%- for ext in self.external_mixin_modules() %}
+  include ::{{ ext.module_name }}::RustBufferBuilderMixin
+  {%- endfor %}
   {% for typ in ci.iter_local_types() -%}
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ -%}
@@ -293,10 +300,6 @@ end
 
 # Helper for structured writing of values into a RustBuffer.
 class RustBufferBuilder
-
-  {%- for ext in self.external_mixin_modules() %}
-  include ::{{ ext.module_name }}::RustBufferBuilderMixin
-  {%- endfor %}
   include RustBufferBuilderMixin
 
   def initialize

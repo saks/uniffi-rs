@@ -1,0 +1,5 @@
+[bindings.ruby.external_packages]
+imported_types_sublib = "ImportedTypesSublib"
+# Deliberately no uniffi_one_ns mapping: this crate must not treat
+# uniffi-one as a direct external. Nested UniffiOne* fields inside
+# SubLibType have to arrive via sub-lib's mixin ancestor chain.

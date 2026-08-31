@@ -211,8 +211,12 @@ impl<'a> RubyWrapper<'a> {
         }
     }
 
-    /// Returns deduplicated list of external mixin info (module name + require path).
-    /// Used by wrapper.rb for `require` and RustBufferBuilder/Stream for `include`.
+    /// Returns deduplicated list of *direct* external mixin info (module name + require path).
+    ///
+    /// Used by wrapper.rb for `require` and by RustBufferBuilder/Stream mixins for `include`.
+    /// Transitive crates are not listed here: each crate's mixin includes its own direct
+    /// dependency mixins, so a consumer of B::Rec that contains C::Thing picks up C via
+    /// B's mixin ancestor chain. Nested C types are absent from `iter_external_types()`.
     pub fn external_mixin_modules(&self) -> Vec<ExternalMixin> {
         let mut seen = BTreeSet::new();
         let mut result = Vec::new();

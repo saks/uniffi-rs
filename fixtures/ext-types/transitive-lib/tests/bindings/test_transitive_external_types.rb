@@ -1,0 +1,80 @@
+# frozen_string_literal: true
+
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+require 'test/unit'
+require 'imported_types_transitive'
+
+class TestTransitiveExternalTypes < Test::Unit::TestCase
+  class UniffiOneTraitImpl < UniffiOneNs::UniffiOneTrait
+    def hello
+      'Hello from Ruby transitive consumer'
+    end
+  end
+
+  # SubLibType lives in crate B; its fields are UniffiOne* types from crate C.
+  # This crate's API never mentions a C type, so C's mixin must arrive via B.
+  def test_mixin_ancestors_include_transitive_crate
+    ancestors = ImportedTypesTransitive::RustBufferStreamMixin.ancestors.map(&:to_s)
+
+    assert_include ancestors, 'ImportedTypesSublib::RustBufferStreamMixin'
+    assert_include ancestors, 'UniffiOneNs::RustBufferStreamMixin'
+  end
+
+  def test_roundtrip_sub_default
+    sub = ImportedTypesSublib::SubLibType.new(
+      maybe_enum: nil,
+      maybe_trait: nil,
+      maybe_interface: nil
+    )
+    result = ImportedTypesTransitive.roundtrip_sub(sub)
+
+    assert_nil result.maybe_enum
+    assert_nil result.maybe_trait
+    assert_nil result.maybe_interface
+  end
+
+  def test_roundtrip_sub_with_nested_enum
+    sub = ImportedTypesSublib::SubLibType.new(
+      maybe_enum: UniffiOneNs::UniffiOneEnum::ONE,
+      maybe_trait: nil,
+      maybe_interface: nil
+    )
+    result = ImportedTypesTransitive.roundtrip_sub(sub)
+
+    assert_equal UniffiOneNs::UniffiOneEnum::ONE, result.maybe_enum
+    assert_nil result.maybe_trait
+    assert_nil result.maybe_interface
+  end
+
+  def test_roundtrip_sub_with_nested_objects
+    trait_impl = UniffiOneTraitImpl.new
+    interface = UniffiOneNs::UniffiOneInterface.new
+    sub = ImportedTypesSublib::SubLibType.new(
+      maybe_enum: UniffiOneNs::UniffiOneEnum::TWO,
+      maybe_trait: trait_impl,
+      maybe_interface: interface
+    )
+    result = ImportedTypesTransitive.roundtrip_sub(sub)
+
+    assert_equal UniffiOneNs::UniffiOneEnum::TWO, result.maybe_enum
+    assert_equal 'Hello from Ruby transitive consumer', result.maybe_trait.hello
+    assert_instance_of UniffiOneNs::UniffiOneInterface, result.maybe_interface
+    assert_equal 1, result.maybe_interface.increment
+  end
+
+  def test_roundtrip_wrapper_with_nested_enum
+    sub = ImportedTypesSublib::SubLibType.new(
+      maybe_enum: UniffiOneNs::UniffiOneEnum::ONE,
+      maybe_trait: nil,
+      maybe_interface: nil
+    )
+    result = ImportedTypesTransitive.roundtrip_wrapper(
+      ImportedTypesTransitive::Wrapper.new(sub: sub)
+    )
+
+    assert_equal UniffiOneNs::UniffiOneEnum::ONE, result.sub.maybe_enum
+  end
+end

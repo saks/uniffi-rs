@@ -2207,6 +2207,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "uniffi-fixture-ext-types-transitive"
+version = "0.22.0"
+dependencies = [
+ "anyhow",
+ "uniffi",
+ "uniffi-fixture-ext-types-sub-lib",
+]
+
+[[package]]
 name = "uniffi-fixture-futures"
 version = "0.21.0"
 dependencies = [

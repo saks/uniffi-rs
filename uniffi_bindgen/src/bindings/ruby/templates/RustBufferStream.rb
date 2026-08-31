@@ -2,7 +2,15 @@
 # Consuming crates include this module into their own RustBufferStream
 # so they can deserialize this crate's types directly, using the local
 # crate's buffer infrastructure (unpack_from, read, etc).
+#
+# Dependency mixins are included here (not on the Stream class) so the
+# mixin is closed over nested types from further crates. A consumer of
+# B::Rec that contains C::Thing then finds read_TypeThing via B's mixin
+# ancestors without naming C in its own API.
 module RustBufferStreamMixin
+  {%- for ext in self.external_mixin_modules() %}
+  include ::{{ ext.module_name }}::RustBufferStreamMixin
+  {%- endfor %}
   {% for typ in ci.iter_local_types() -%}
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ -%}
@@ -332,9 +340,6 @@ end
 
 # Helper for structured reading of values from a RustBuffer.
 class RustBufferStream
-  {%- for ext in self.external_mixin_modules() %}
-  include ::{{ ext.module_name }}::RustBufferStreamMixin
-  {%- endfor %}
   include RustBufferStreamMixin
   
   def initialize(rbuf)
