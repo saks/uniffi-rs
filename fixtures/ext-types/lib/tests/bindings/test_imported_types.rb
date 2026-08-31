@@ -108,6 +108,20 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_equal UniffiOneNs::UniffiOneEnum::ONE, result
   end
 
+  # Mixin readers live in the defining crate, so a corrupt buffer for an
+  # external type raises that crate's InternalError — matching Python/Kotlin
+  # converters. ImportedTypesLib::InternalError is a different class.
+  def test_corrupt_external_enum_raises_defining_crate_internal_error
+    buf = ImportedTypesLib::RustBuffer.alloc(4)
+    buf.len = 4
+    buf.data.put_bytes(0, [99].pack('l>'))
+    err = assert_raise(UniffiOneNs::InternalError) do
+      buf.consume_into_TypeUniffiOneEnum
+    end
+    assert_match(/Unexpected variant tag/, err.message)
+    assert_not_same ImportedTypesLib::InternalError, UniffiOneNs::InternalError
+  end
+
   def test_objects_type
     ot = ImportedTypesLib.get_objects_type(nil)
 

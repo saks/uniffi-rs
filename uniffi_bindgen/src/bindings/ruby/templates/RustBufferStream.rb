@@ -7,6 +7,7 @@
 # mixin is closed over nested types from further crates. A consumer of
 # B::Rec that contains C::Thing then finds read_TypeThing via B's mixin
 # ancestors without naming C in its own API.
+# InternalError in these methods is this crate's class for the same reason.
 module RustBufferStreamMixin
   {%- for ext in self.external_mixin_modules() %}
   include ::{{ ext.module_name }}::RustBufferStreamMixin

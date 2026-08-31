@@ -41,3 +41,14 @@ rust_crate_name = "ExternalRubyModule"
 ```
 
 Refer to [`examples/custom-types/uniffi.toml`](https://github.com/mozilla/uniffi-rs/blob/main/examples/custom-types/uniffi.toml) for a complete example.
+
+## InternalError
+
+Each generated module defines its own `InternalError` class (`StandardError` subclass), for example `Coverall::InternalError`.
+This is the same idea as Python `InternalError` and Kotlin `InternalException`: a public bindings-level error for panics, protocol mismatches, and corrupt buffers — not for declared API errors.
+
+Readers and writers for a type live in that type's crate (Ruby mixins, like Python/Kotlin converters).
+A corrupt buffer while lifting an [external type](../types/remote_ext_types.md) therefore raises **the defining crate's** `InternalError`.
+`rescue ImportedTypesLib::InternalError` will not catch `UniffiOneNs::InternalError`.
+
+Rescue the crate that owns the type, rescue each crate you depend on, or use `rescue StandardError` as a catch-all.

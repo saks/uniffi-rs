@@ -85,6 +85,12 @@ This normally means types from other crates in your workspace.
 
 Proc-macros typically use external types automatically, but UDL needs them described.
 
+Bindings-level internal errors (`InternalError` / `InternalException`) are defined by the crate that owns the type — Ruby mixins and Python/Kotlin converters raise that crate's class, not the consumer's.
+
+## Proc-macros
+
+Proc-macro-based code can use external types automatically, without any extra code.
+
 ## UDL
 
 Suppose you depend on the `DemoDict` type from another UniFFIed crate in your workspace.
