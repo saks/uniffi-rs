@@ -79,6 +79,22 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_kind_of URI, ct.url
   end
 
+  # LocalUrl wraps imported Url. The defining crate's URI conversion must
+  # apply on both the top-level FFI path and the nested mixin (record field)
+  # path — otherwise the same type lifts to String vs URI.
+  def test_local_url_wrapping_imported_url
+    url = URI.parse 'http://example.com/'
+
+    top = ImportedTypesLib.get_local_url(nil)
+    assert_kind_of URI, top
+    assert_equal url, ImportedTypesLib.get_local_url(url)
+
+    holder = ImportedTypesLib.get_local_url_holder(nil)
+    assert_kind_of URI, holder.url
+    holder2 = ImportedTypesLib.get_local_url_holder(holder)
+    assert_equal holder.url, holder2.url
+  end
+
   def test_external_crate_types
     iface = ImportedTypesLib.get_external_crate_interface 'foo'
 

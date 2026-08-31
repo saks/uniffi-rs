@@ -176,6 +176,29 @@ async fn get_local_external_guid_async() -> LocalExternalGuid {
     }
 }
 
+// Local custom type whose builtin is an imported custom type with a real
+// bindings conversion (Url → URI). Identity Guid wrappers cannot catch a
+// dropped defining-crate converter; this one can.
+pub struct LocalUrl(pub Url);
+uniffi::custom_newtype!(LocalUrl, Url);
+
+#[uniffi::export]
+fn get_local_url(url: Option<LocalUrl>) -> LocalUrl {
+    url.unwrap_or_else(|| LocalUrl(Url::parse("http://example.com/").unwrap()))
+}
+
+#[derive(uniffi::Record)]
+pub struct LocalUrlHolder {
+    pub url: LocalUrl,
+}
+
+#[uniffi::export]
+fn get_local_url_holder(holder: Option<LocalUrlHolder>) -> LocalUrlHolder {
+    holder.unwrap_or_else(|| LocalUrlHolder {
+        url: LocalUrl(Url::parse("http://example.com/").unwrap()),
+    })
+}
+
 // A struct
 fn get_uniffi_one_type(t: UniffiOneType) -> UniffiOneType {
     t

@@ -281,11 +281,11 @@ impl<'a> RubyWrapper<'a> {
 
     /// Defining crate module and builtin for an imported custom type.
     ///
-    /// Top-level custom types use the builtin FFI layout (a raw string buffer
-    /// for Url, a primitive for numeric aliases). Lift/lower therefore peel to
-    /// the builtin and apply the *defining* crate's converter — not a
-    /// consumer-side `custom_types` copy, and not the length-prefixed mixin
-    /// used when the same type is nested in a record or sequence.
+    /// Used by `coerce_rb` to treat an imported custom type as already the
+    /// foreign value (skip builtin coercion). Lift/lower/check_lower walk
+    /// every `Type::Custom` node in dispatch and call that crate's
+    /// `uniffi_{lift,lower,check_lower}_*` — including when the custom type
+    /// is the builtin of another custom type (`LocalUrl` wrapping `Url`).
     fn external_custom<'b>(&self, type_: &'b Type) -> Option<(String, &'b Type)> {
         match type_ {
             Type::Box { inner_type } => self.external_custom(inner_type),
@@ -304,48 +304,34 @@ impl<'a> RubyWrapper<'a> {
         self.external_custom(type_).is_some()
     }
 
-    pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
-        if let Some((module, builtin)) = self.external_custom(type_) {
-            let builtin_lift =
-                filters::lift_rb_inner_dispatch(nm, builtin, &self.config.custom_types, None)
-                    .expect("lift_rb builtin for external custom type failed");
-            return format!(
-                "{module}.uniffi_lift_{}({builtin_lift})",
-                canonical_name(type_)
-            );
+    /// Ruby module that owns `uniffi_lift_*` / `uniffi_lower_*` for a custom type.
+    ///
+    /// External types use the defining crate's module; local types use this
+    /// crate's namespace so the call is valid from instance methods as well
+    /// as `def self.` functions.
+    pub(crate) fn custom_owner_module(&self, module_path: &str) -> String {
+        if self.is_external_module(module_path) {
+            self.external_type_module(module_path)
+        } else {
+            class_name_rb_inner(self.ci.namespace()).expect("namespace class name")
         }
+    }
+
+    pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
         let module = self.ffi_module_prefix(type_);
-        filters::lift_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
+        filters::lift_rb_inner_dispatch(nm, type_, module.as_deref(), self)
             .expect("lift_rb_inner_dispatch failed")
     }
 
     pub fn lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
-        let nm = nm.as_ref();
-        if let Some((module, builtin)) = self.external_custom(type_) {
-            let lowered = format!("{module}.uniffi_lower_{}({nm})", canonical_name(type_));
-            return filters::lower_rb_inner_dispatch(
-                &lowered,
-                builtin,
-                &self.config.custom_types,
-                None,
-            )
-            .expect("lower_rb builtin for external custom type failed");
-        }
         let module = self.ffi_module_prefix(type_);
-        filters::lower_rb_inner_dispatch(nm, type_, &self.config.custom_types, module.as_deref())
+        filters::lower_rb_inner_dispatch(nm.as_ref(), type_, module.as_deref(), self)
             .expect("lower_rb_inner_dispatch failed")
     }
 
     pub fn check_lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
-        let nm = nm.as_ref();
-        if let Some((module, _)) = self.external_custom(type_) {
-            return format!(
-                "{module}.uniffi_check_lower_{}({nm})",
-                canonical_name(type_)
-            );
-        }
         let module = self.ffi_module_prefix(type_);
-        filters::check_lower_rb_inner(nm, type_, &self.config, module.as_deref())
+        filters::check_lower_rb_inner(nm.as_ref(), type_, module.as_deref(), self)
             .expect("check_lower_rb_inner failed")
     }
 
@@ -725,8 +711,8 @@ mod filters {
     pub(super) fn check_lower_rb_inner(
         nm: &str,
         type_: &Type,
-        config: &Config,
         module: Option<&str>,
+        wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
         Ok(match type_ {
             Type::Object { name, .. } => {
@@ -747,49 +733,60 @@ mod filters {
                     canonical_name(type_)
                 )
             }
-            Type::Custom { name, .. } => {
-                if let Some(cfg) = config.custom_types.get(name) {
-                    if let Some(type_name) = &cfg.type_name {
-                        format!(
-                            "raise TypeError, \"Expected {type_name}, got #{{{nm}.class}}\" unless {nm}.is_a?({type_name})"
-                        )
-                    } else {
-                        String::new()
-                    }
+            Type::Box { inner_type } => check_lower_rb_inner(nm, inner_type, module, wrapper)?,
+            Type::Custom {
+                name,
+                builtin,
+                module_path,
+                ..
+            } => {
+                // External types always use the defining crate's checker.
+                // Local types with a `type_name` use this crate's checker.
+                // Identity local newtypes recurse so a wrapper like
+                // `LocalUrl = Url` still checks `URI`.
+                let has_local_type_name = wrapper
+                    .config
+                    .custom_types
+                    .get(name)
+                    .and_then(|cfg| cfg.type_name.as_ref())
+                    .is_some();
+                if wrapper.is_external_module(module_path) || has_local_type_name {
+                    format!(
+                        "{}.uniffi_check_lower_{}({nm})",
+                        wrapper.custom_owner_module(module_path),
+                        canonical_name(type_),
+                    )
                 } else {
-                    String::new()
+                    check_lower_rb_inner(nm, builtin, module, wrapper)?
                 }
             }
             _ => String::new(),
         })
     }
 
-    pub fn lower_rb_inner(
-        nm: &str,
-        type_: &Type,
-        custom_types: &HashMap<String, CustomTypeConfig>,
-    ) -> Result<String, askama::Error> {
-        lower_rb_inner_dispatch(nm, type_, custom_types, None)
-    }
-
     pub fn lower_rb_inner_dispatch(
         nm: &str,
         type_: &Type,
-        custom_types: &HashMap<String, CustomTypeConfig>,
         module: Option<&str>,
+        wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
         Ok(match type_ {
             // Named-handle types that recurse without touching a RustBuffer.
-            Type::Box { inner_type } => {
-                lower_rb_inner_dispatch(nm, inner_type, custom_types, module)?
-            }
-            Type::Custom { name, builtin, .. } => {
-                let nm = if let Some(cfg) = custom_types.get(name) {
-                    cfg.lower(nm)
-                } else {
-                    nm.to_string()
-                };
-                lower_rb_inner_dispatch(&nm, builtin, custom_types, module)?
+            Type::Box { inner_type } => lower_rb_inner_dispatch(nm, inner_type, module, wrapper)?,
+            Type::Custom {
+                builtin,
+                module_path,
+                ..
+            } => {
+                // Convert via the owning module, then lower the builtin. Do not
+                // also apply consumer `custom_types` — that lives in
+                // `uniffi_lower_*` (CustomTypeTemplate.rb).
+                let converted = format!(
+                    "{}.uniffi_lower_{}({nm})",
+                    wrapper.custom_owner_module(module_path),
+                    canonical_name(type_),
+                );
+                lower_rb_inner_dispatch(&converted, builtin, module, wrapper)?
             }
             // Builtin primitives passed through by value.
             Type::Int8
@@ -841,21 +838,26 @@ mod filters {
     pub fn lift_rb_inner_dispatch(
         nm: &str,
         type_: &Type,
-        custom_types: &HashMap<String, CustomTypeConfig>,
         module: Option<&str>,
+        wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
         Ok(match type_ {
             // Named-handle types that recurse without touching a RustBuffer.
-            Type::Box { inner_type } => {
-                lift_rb_inner_dispatch(nm, inner_type, custom_types, module)?
-            }
-            Type::Custom { name, builtin, .. } => {
-                let lifted = lift_rb_inner_dispatch(nm, builtin, custom_types, module)?;
-                if let Some(cfg) = custom_types.get(name) {
-                    cfg.lift(&lifted)
-                } else {
-                    lifted
-                }
+            Type::Box { inner_type } => lift_rb_inner_dispatch(nm, inner_type, module, wrapper)?,
+            Type::Custom {
+                builtin,
+                module_path,
+                ..
+            } => {
+                // Lift the builtin, then convert via the owning module. Do not
+                // also apply consumer `custom_types` — that lives in
+                // `uniffi_lift_*` (CustomTypeTemplate.rb).
+                let lifted = lift_rb_inner_dispatch(nm, builtin, module, wrapper)?;
+                format!(
+                    "{}.uniffi_lift_{}({lifted})",
+                    wrapper.custom_owner_module(module_path),
+                    canonical_name(type_),
+                )
             }
             // Builtin primitives passed through by value.
             Type::Int8
@@ -909,13 +911,13 @@ mod filters {
     pub fn lower_method_self_rb(
         meth: &Method,
         _: &dyn askama::Values,
-        config: &Config,
+        wrapper: &RubyWrapper<'filter>,
     ) -> Result<String, askama::Error> {
         let self_type = meth
             .self_type()
             .expect("Trait method must have a self type");
 
-        lower_rb_inner("self", &self_type, &config.custom_types)
+        Ok(wrapper.lower_rb("self", &self_type))
     }
 
     /// Render a Ruby integer literal for the discriminant of the variant at `index` in enum `e`.

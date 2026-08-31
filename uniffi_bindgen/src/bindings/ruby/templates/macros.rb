@@ -47,13 +47,13 @@ values[{{- field_num - 1 -}}]
 {%- macro to_ffi_call_with_lower_self(func) -%}
     {%- call rust_call_head(func) %}{% endcall -%}
     :{{ func.ffi_func().name() }},
-    {{ func|lower_method_self_rb(config) }},
+    {{ func|lower_method_self_rb(self) }},
     {%- call _arg_list_ffi_call(func) %}{% endcall -%}
 )
 {%- endmacro -%}
 
 {%- macro to_ffi_call_with_lower_self_async(func) -%}
-    {%- call to_ffi_call_with_prefix_async(func|lower_method_self_rb(config), func) %}{% endcall %}
+    {%- call to_ffi_call_with_prefix_async(func|lower_method_self_rb(self), func) %}{% endcall %}
 {%- endmacro -%}
 
 {%- macro _arg_list_ffi_call(func) %}
