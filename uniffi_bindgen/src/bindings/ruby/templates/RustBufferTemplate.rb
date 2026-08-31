@@ -159,7 +159,7 @@ class RustBuffer < FFI::Struct
       {%- if field.name().is_empty() %}
         {{ self.check_lower_rb("v.values[{}]"|format(loop.index0), field.as_type().borrow()) }}
       {%- else %}
-        {{ self.check_lower_rb("v.{}"|format(field.name()), field.as_type().borrow()) }}
+        {{ self.check_lower_rb("v.{}"|format(field.name()|var_name_rb), field.as_type().borrow()) }}
       {%- endif %}
       {%- endfor %}
       return
