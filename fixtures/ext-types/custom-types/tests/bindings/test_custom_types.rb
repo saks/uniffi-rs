@@ -70,6 +70,20 @@ class TestCustomTypes < Test::Unit::TestCase
     assert_equal 42, ExtTypesCustom.get_handle_u8(42)
   end
 
+  # -- NestedObject / NestedRecord (identity custom types over Object / Record) --
+
+  def test_nested_object
+    obj = ExtTypesCustom::InnerObject.new
+    result = ExtTypesCustom.get_nested_object(obj)
+    assert_instance_of ExtTypesCustom::InnerObject, result
+  end
+
+  def test_nested_record
+    rec = ExtTypesCustom::InnerRecord.new(i: 1)
+    result = ExtTypesCustom.get_nested_record(rec)
+    assert_equal 1, result.i
+  end
+
   # -- GuidCallback (custom type passed through callback interface) --
 
   class GuidCallbackImpl < ExtTypesCustom::GuidCallback

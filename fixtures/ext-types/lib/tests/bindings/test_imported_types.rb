@@ -162,6 +162,22 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_equal 'nested-external-ouid', ImportedTypesLib.get_nested_external_ouid(nil)
   end
 
+  # NestedObject wraps InnerObject. Lowering must qualify
+  # ExtTypesCustom::InnerObject.uniffi_lower — an unqualified InnerObject
+  # NameErrors inside ImportedTypesLib.
+  def test_imported_nested_object
+    obj = ExtTypesCustom::InnerObject.new
+    result = ImportedTypesLib.get_imported_nested_object(obj)
+    assert_instance_of ExtTypesCustom::InnerObject, result
+    assert_raise(TypeError) { ImportedTypesLib.get_imported_nested_object('nope') }
+  end
+
+  def test_imported_nested_record
+    rec = ExtTypesCustom::InnerRecord.new(i: 1)
+    result = ImportedTypesLib.get_imported_nested_record(rec)
+    assert_equal 1, result.i
+  end
+
   def test_rename
     t = ImportedTypesLib.get_binding_renamed_type('external_rename_test')
 

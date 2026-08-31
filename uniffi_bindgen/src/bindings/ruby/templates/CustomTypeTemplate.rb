@@ -12,7 +12,8 @@ def self.uniffi_lower_{{ canonical_type_name }}(v)
   v
 end
 
-def self.uniffi_check_lower_{{ canonical_type_name }}(_v)
+def self.uniffi_check_lower_{{ canonical_type_name }}(v)
+  {{ self.check_lower_rb("v", builtin) }}
 end
 
 {%- when Some(cfg) %}

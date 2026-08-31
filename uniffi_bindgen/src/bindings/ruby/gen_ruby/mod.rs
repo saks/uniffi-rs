@@ -268,7 +268,9 @@ impl<'a> RubyWrapper<'a> {
     fn ffi_module_prefix(&self, type_: &Type) -> Option<String> {
         match type_ {
             Type::Box { inner_type } => self.ffi_module_prefix(inner_type),
-            // Custom conversions are applied locally; recurse into the builtin.
+            // Recurse so a Custom wrapping an external Object/CallbackInterface
+            // still prefixes `InnerObject.uniffi_lift` / `CallbackInterfaceXFfiConverter`
+            // with the defining crate. Passing `None` here NameErrors in the consumer.
             Type::Custom { builtin, .. } => self.ffi_module_prefix(builtin),
             Type::Object { module_path, .. } | Type::CallbackInterface { module_path, .. }
                 if self.is_external_module(module_path) =>
@@ -740,7 +742,9 @@ mod filters {
                 module_path,
                 ..
             } => {
-                // External types always use the defining crate's checker.
+                // External types always use the defining crate's checker
+                // (identity newtypes forward to the builtin there, so an
+                // imported NestedObject still runs InnerObject.uniffi_check_lower).
                 // Local types with a `type_name` use this crate's checker.
                 // Identity local newtypes recurse so a wrapper like
                 // `LocalUrl = Url` still checks `URI`.
@@ -778,8 +782,9 @@ mod filters {
                 module_path,
                 ..
             } => {
-                // Convert via the owning module, then lower the builtin. Do not
-                // also apply consumer `custom_types` — that lives in
+                // Convert via the owning module, then lower the builtin.
+                // Forward `module` so Object/CallbackInterface stay qualified.
+                // Do not also apply consumer `custom_types` — that lives in
                 // `uniffi_lower_*` (CustomTypeTemplate.rb).
                 let converted = format!(
                     "{}.uniffi_lower_{}({nm})",
@@ -849,8 +854,9 @@ mod filters {
                 module_path,
                 ..
             } => {
-                // Lift the builtin, then convert via the owning module. Do not
-                // also apply consumer `custom_types` — that lives in
+                // Lift the builtin, then convert via the owning module.
+                // Forward `module` so Object/CallbackInterface stay qualified.
+                // Do not also apply consumer `custom_types` — that lives in
                 // `uniffi_lift_*` (CustomTypeTemplate.rb).
                 let lifted = lift_rb_inner_dispatch(nm, builtin, module, wrapper)?;
                 format!(
