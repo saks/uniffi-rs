@@ -314,13 +314,15 @@ impl<'a> RubyWrapper<'a> {
     ///
     /// External types use the defining crate's module; local types use this
     /// crate's namespace so the call is valid from instance methods as well
-    /// as `def self.` functions.
+    /// as `def self.` functions. Always rooted at `::` so lookup does not bind
+    /// a nested constant of the same name inside the consumer module.
     pub(crate) fn custom_owner_module(&self, module_path: &str) -> String {
-        if self.is_external_module(module_path) {
+        let module = if self.is_external_module(module_path) {
             self.external_type_module(module_path)
         } else {
             class_name_rb_inner(self.ci.namespace()).expect("namespace class name")
-        }
+        };
+        format!("::{module}")
     }
 
     pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
@@ -390,12 +392,18 @@ fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
 mod filters {
     use super::*;
 
-    /// Qualify `name` with an optional external module path, e.g. `qualify("Foo", Some("Mod"))`
-    /// yields `"Mod::Foo"`; with `None` it yields `"Foo"` unchanged. This is the single source
-    /// of truth for prefixing names with their owning module across the lift/lower/check filters.
+    /// Qualify `name` with an optional external module path.
+    ///
+    /// External modules are rooted at `::` so lookup does not bind a nested
+    /// constant of the same name inside the consumer module.
+    /// `qualify("Foo", Some("Mod"))` yields `"::Mod::Foo"`;
+    /// `qualify("", Some("Mod"))` yields `"::Mod::"` (prefix for RustBuffer / converters);
+    /// with `None` it yields `"Foo"` unchanged (local, relative). This is the
+    /// single source of truth for prefixing names with their owning module
+    /// across the lift/lower/check filters.
     fn qualify(name: &str, module: Option<&str>) -> String {
         match module {
-            Some(m) => format!("{m}::{name}"),
+            Some(m) => format!("::{m}::{name}"),
             None => name.to_string(),
         }
     }
@@ -947,6 +955,26 @@ mod filters {
             _ => Err(askama::Error::Custom(
                 anyhow::anyhow!("Only integer discriminants are supported").into(),
             )),
+        }
+    }
+
+    #[cfg(test)]
+    mod qualify_tests {
+        use super::qualify;
+
+        #[test]
+        fn roots_external_module() {
+            assert_eq!(qualify("Foo", Some("Mod")), "::Mod::Foo");
+        }
+
+        #[test]
+        fn roots_external_module_prefix() {
+            assert_eq!(qualify("", Some("Mod")), "::Mod::");
+        }
+
+        #[test]
+        fn leaves_local_name_unprefixed() {
+            assert_eq!(qualify("Foo", None), "Foo");
         }
     }
 }

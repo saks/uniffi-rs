@@ -296,8 +296,7 @@ class RustBuffer < FFI::Struct
   end
 
   def self.check_lower_{{ canonical_type_name }}(v)
-    mod = {{ self.external_type_module(typ.module_path().unwrap()) }}
-    mod.const_get(:RustBuffer).check_lower_{{ canonical_type_name }}(v)
+    ::{{ self.external_type_module(typ.module_path().unwrap()) }}::RustBuffer.check_lower_{{ canonical_type_name }}(v)
   end
   {%- else %}
   {%- endmatch %}

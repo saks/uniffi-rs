@@ -227,4 +227,24 @@ class TestImportedTypes < Test::Unit::TestCase
 
     assert_nothing_raised { ImportedTypesLib.takes_external_error(err) }
   end
+
+  # Generated cross-module references must be rooted at Object (`::UniffiOneNs`).
+  # A nested constant of the same name inside the consumer module would
+  # otherwise hijack relative lookup in lift/lower/check.
+  def test_external_module_lookup_ignores_nested_shadow
+    ImportedTypesLib.const_set(:UniffiOneNs, Module.new)
+
+    uot = ::UniffiOneNs::UniffiOneType.new(sval: 'hello')
+    assert_equal 'hello', ImportedTypesLib.get_uniffi_one_type(uot).sval
+
+    e = ::UniffiOneNs::UniffiOneEnum::ONE
+    assert_equal e, ImportedTypesLib.get_uniffi_one_enum(e)
+
+    impl = UniffiOneTraitImpl.new
+    assert_equal 'Hello from Ruby', ImportedTypesLib.invoke_uniffi_one_trait(impl)
+  ensure
+    if ImportedTypesLib.const_defined?(:UniffiOneNs, false)
+      ImportedTypesLib.send(:remove_const, :UniffiOneNs)
+    end
+  end
 end
