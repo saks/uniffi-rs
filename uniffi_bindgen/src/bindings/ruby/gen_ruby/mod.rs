@@ -174,10 +174,7 @@ impl Config {
         self.external_packages
             .get(&crate_name)
             .cloned()
-            .unwrap_or_else(|| {
-                let ns_name = namespace.unwrap_or(module_path);
-                class_name_rb_inner(ns_name).unwrap_or_else(|_| ns_name.to_string())
-            })
+            .unwrap_or_else(|| class_name_rb_inner(namespace.unwrap_or(module_path)))
     }
 
     /// Canonicalize `external_packages` keys to underscored Rust crate names.
@@ -390,7 +387,6 @@ impl<'a> RubyWrapper<'a> {
             self.external_type_module(module_path)
         } else {
             class_name_rb_inner(self.ci.namespace())
-                .unwrap_or_else(|_| self.ci.namespace().to_string())
         };
         format!("::{module}")
     }
@@ -415,7 +411,7 @@ impl<'a> RubyWrapper<'a> {
     }
 
     pub fn coerce_rb(&self, nm: impl AsRef<str>, type_: &Type) -> Result<String, askama::Error> {
-        let ns = class_name_rb_inner(self.ci.namespace())?;
+        let ns = class_name_rb_inner(self.ci.namespace());
         filters::coerce_rb_inner(nm, ns, type_, &self.config.custom_types, self)
     }
 
@@ -457,8 +453,8 @@ impl<'a> RubyWrapper<'a> {
     }
 }
 
-fn class_name_rb_inner(nm: &str) -> Result<String, askama::Error> {
-    Ok(nm.to_string().to_upper_camel_case())
+fn class_name_rb_inner(nm: &str) -> String {
+    nm.to_string().to_upper_camel_case()
 }
 
 mod filters {
@@ -629,7 +625,7 @@ mod filters {
                     format!(
                         "{}::{}",
                         qualify(
-                            &class_name_rb_inner(name)?,
+                            &class_name_rb_inner(name),
                             wrapper.type_class_module(type_).as_deref()
                         ),
                         enum_name_rb_inner(v)?
@@ -681,7 +677,7 @@ mod filters {
                 format!(
                     "{}.new",
                     qualify(
-                        &class_name_rb_inner(name)?,
+                        &class_name_rb_inner(name),
                         wrapper.type_class_module(ty).as_deref()
                     )
                 )
@@ -698,7 +694,7 @@ mod filters {
 
     #[askama::filter_fn]
     pub fn class_name_rb(nm: &str, _: &dyn askama::Values) -> Result<String, askama::Error> {
-        class_name_rb_inner(nm)
+        Ok(class_name_rb_inner(nm))
     }
 
     #[askama::filter_fn]
@@ -812,7 +808,7 @@ mod filters {
             Type::Object { name, .. } => {
                 format!(
                     "({}.uniffi_check_lower {nm})",
-                    qualify(&class_name_rb_inner(name)?, module)
+                    qualify(&class_name_rb_inner(name), module)
                 )
             }
             Type::Enum { .. }
@@ -900,14 +896,14 @@ mod filters {
             Type::Object { name, .. } => {
                 format!(
                     "({}.uniffi_lower {nm})",
-                    qualify(&class_name_rb_inner(name)?, module)
+                    qualify(&class_name_rb_inner(name), module)
                 )
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
                     "({}CallbackInterface{}FfiConverter.lower {})",
                     qualify("", module),
-                    class_name_rb_inner(name)?,
+                    class_name_rb_inner(name),
                     nm
                 )
             }
@@ -971,20 +967,20 @@ mod filters {
             Type::Object { name, .. } => {
                 format!(
                     "{}.uniffi_lift({nm})",
-                    qualify(&class_name_rb_inner(name)?, module)
+                    qualify(&class_name_rb_inner(name), module)
                 )
             }
             Type::CallbackInterface { name, .. } => {
                 format!(
                     "({}CallbackInterface{}FfiConverter.lift {nm})",
                     qualify("", module),
-                    class_name_rb_inner(name)?
+                    class_name_rb_inner(name)
                 )
             }
             Type::Enum { .. } => {
                 format!(
                     "{nm}.consume_into_{}",
-                    class_name_rb_inner(&canonical_name(type_))?
+                    class_name_rb_inner(&canonical_name(type_))
                 )
             }
             // Types deserialized from a RustBuffer.
@@ -1097,7 +1093,7 @@ mod test_type {
 
     #[test]
     fn test_class_name() {
-        assert_eq!(class_name_rb_inner("Example").unwrap(), "Example");
+        assert_eq!(class_name_rb_inner("Example"), "Example");
     }
 }
 
