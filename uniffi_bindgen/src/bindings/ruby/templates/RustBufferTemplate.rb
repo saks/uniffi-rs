@@ -295,6 +295,10 @@ class RustBuffer < FFI::Struct
     end
   end
 
+  # External type bridge: check_lower only validates the Ruby value; it never
+  # allocs, reserves, or frees a RustBuffer. Delegating to the defining crate
+  # is safe and does not break the local-allocator invariant of the bridges
+  # above.
   def self.check_lower_{{ canonical_type_name }}(v)
     ::{{ self.external_type_module(typ.module_path().unwrap()) }}::RustBuffer.check_lower_{{ canonical_type_name }}(v)
   end
