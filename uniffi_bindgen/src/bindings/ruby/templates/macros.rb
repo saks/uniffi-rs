@@ -21,12 +21,20 @@ values[{{- field_num - 1 -}}]
     The reader method symbol is computed by the Rust backend — see error_reader_symbol.
 -#}
 {%- macro rust_call_head(func) -%}
-    {%- let reader = self.error_reader_symbol(func) %}
-    {%- if reader != "nil" %}
+    {%- match self.error_reader_symbol(func) %}
+    {%- when Some with (reader) %}
     ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ reader }},
-    {%- else %}
+    {%- when None %}
     ::{{ ci.namespace()|class_name_rb }}.rust_call(
-    {%- endif -%}
+    {%- endmatch -%}
+{%- endmacro -%}
+
+{#- Emit the error-reader argument for async FFI calls: `:read_TypeFoo` or Ruby `nil`. -#}
+{%- macro error_reader_expr(func) -%}
+    {%- match self.error_reader_symbol(func) %}
+    {%- when Some with (reader) %}{{ reader }}
+    {%- when None %}nil
+    {%- endmatch %}
 {%- endmacro -%}
   
 {%- macro to_ffi_call(func) -%}
@@ -104,7 +112,7 @@ values[{{- field_num - 1 -}}]
       {%- when None %}
       Proc.new { |v| nil },
       {%- endmatch %}
-      {{ self.error_reader_symbol(func) }}
+      {%- call error_reader_expr(func) %}{% endcall %}
     )
 {%- endmacro %}
 
@@ -118,7 +126,7 @@ values[{{- field_num - 1 -}}]
       :{{ func.ffi_rust_future_complete(ci) }},
       :{{ func.ffi_rust_future_free(ci) }},
       Proc.new { |v| v },
-      {{ self.error_reader_symbol(func) }}
+      {%- call error_reader_expr(func) %}{% endcall %}
     )
 {%- endmacro %}
 

@@ -195,19 +195,19 @@ impl<'a> RubyWrapper<'a> {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
     }
 
-    /// Returns the reader symbol for a function's error type, or `"nil"`.
+    /// Reader symbol for a function's error type (`:read_TypeFoo`), or `None`.
     /// Unwraps Custom types to find the inner Enum/Object, then uses `canonical_name`.
-    pub fn error_reader_symbol(&self, func: &impl Callable) -> String {
+    pub fn error_reader_symbol(&self, func: &impl Callable) -> Option<String> {
         let error_type = match func.throws_type() {
             Some(Type::Custom { builtin, .. }) => builtin.as_ref(),
             Some(type_) => type_,
-            None => return "nil".into(),
+            None => return None,
         };
         match error_type {
             Type::Enum { .. } | Type::Object { .. } => {
-                format!(":read_{}", canonical_name(error_type))
+                Some(format!(":read_{}", canonical_name(error_type)))
             }
-            _ => "nil".into(),
+            _ => None,
         }
     }
 
