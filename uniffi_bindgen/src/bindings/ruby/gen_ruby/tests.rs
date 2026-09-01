@@ -276,6 +276,39 @@ fn external_mixin_modules_errors_on_external_packages_collision() {
 }
 
 #[test]
+fn external_mixin_modules_ignores_unused_external_packages_entry() {
+    let ci = ci_with_namespaces(
+        r#"
+        namespace consumer {
+            TypeB get_b();
+        };
+
+        [External="crate_b"]
+        typedef dictionary TypeB;
+        "#,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_b", "ns_b"),
+            ("crate_c", "ns_c"),
+        ],
+    );
+    let mut config = Config::default();
+    config
+        .external_packages
+        .insert("crate_b".into(), "NsB".into());
+    config
+        .external_packages
+        .insert("crate_c".into(), "NsC".into());
+    let mixins = RubyWrapper::new(config, &ci)
+        .external_mixin_modules()
+        .unwrap();
+    assert_eq!(mixins.len(), 1);
+    assert_eq!(mixins[0].module_name, "NsB");
+    assert_eq!(mixins[0].require_path, "ns_b");
+}
+
+#[test]
 fn external_mixin_modules_collapses_hyphenated_and_underscored_crate() {
     let ci = ci_with_namespaces(
         r#"

@@ -105,6 +105,14 @@ fn apply_renames(components: &mut Vec<Component<Config>>) {
 /// Default module name is the peer's namespace converted to UpperCamelCase.
 /// User overrides in `[bindings.ruby.external_packages]` win; keys must already
 /// be normalized (`my-crate` → `my_crate`) via [`Config::normalize_external_package_keys`].
+///
+/// Library mode inserts **every** other crate in the cdylib, not only crates
+/// this component uses as a direct external. The map is a module-name lookup
+/// (so `external_package_name` does not depend on the namespace fallback).
+/// It is not mixin / `require` membership — that comes from
+/// `ComponentInterface::iter_external_types` via
+/// `RubyWrapper::external_mixin_modules`. Omitting a key therefore does not
+/// mean "do not treat this crate as a direct external".
 fn populate_external_packages(components: &mut [Component<Config>]) {
     let packages = HashMap::<String, String>::from_iter(components.iter().map(|c| {
         (

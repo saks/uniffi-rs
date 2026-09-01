@@ -23,6 +23,19 @@ class TestTransitiveExternalTypes < Test::Unit::TestCase
     assert_include ancestors, 'UniffiOneNs::RustBufferStreamMixin'
   end
 
+  # external_packages auto-fill still maps uniffi-one for module-name lookup;
+  # mixin / require membership is iter_external_types, so this crate must not
+  # pull uniffi-one in directly.
+  def test_consumer_does_not_require_or_include_transitive_crate
+    path = $LOADED_FEATURES.find { |f| File.basename(f) == 'imported_types_transitive.rb' }
+    assert_not_nil path, 'imported_types_transitive.rb should be loaded'
+    src = File.read(path)
+
+    assert_match(/require ['"]imported_types_sublib['"]/, src)
+    assert_not_match(/require ['"]uniffi_one_ns['"]/, src)
+    assert_not_match(/include ::UniffiOneNs::/, src)
+  end
+
   def test_roundtrip_sub_default
     sub = ImportedTypesSublib::SubLibType.new(
       maybe_enum: nil,
