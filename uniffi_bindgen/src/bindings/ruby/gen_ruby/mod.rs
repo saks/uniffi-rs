@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use askama::Template;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
@@ -30,8 +30,16 @@ fn is_reserved_word(word: &str) -> bool {
 }
 
 /// Extract the crate name from a module path (everything before the first `::`).
-fn crate_name_from_module_path(module_path: &str) -> &str {
-    module_path.split("::").next().unwrap_or(module_path)
+///
+/// Hyphens are normalized to underscores so UDL `[External="my-crate"]` and
+/// proc-macro `module_path!()` (`my_crate`) resolve to the same key. Matches
+/// [`crate::interface::ComponentInterface::namespace_for_module_path`].
+fn crate_name_from_module_path(module_path: &str) -> String {
+    module_path
+        .split("::")
+        .next()
+        .unwrap_or(module_path)
+        .replace('-', "_")
 }
 
 /// Get the canonical, unique-within-this-component name for a type.
@@ -163,12 +171,37 @@ impl Config {
         let crate_name = crate_name_from_module_path(module_path);
 
         self.external_packages
-            .get(crate_name)
+            .get(&crate_name)
             .cloned()
             .unwrap_or_else(|| {
                 let ns_name = namespace.unwrap_or(module_path);
                 class_name_rb_inner(ns_name).unwrap_or_else(|_| ns_name.to_string())
             })
+    }
+
+    /// Canonicalize `external_packages` keys to underscored Rust crate names.
+    ///
+    /// Cargo package names and UDL `[External="..."]` values may contain hyphens;
+    /// proc-macro module paths and `ci.crate_name()` never do. Rewrite keys so
+    /// `my-crate` and `my_crate` are the same entry. Conflicting values for the
+    /// same crate are an error.
+    pub(super) fn normalize_external_package_keys(&mut self) -> Result<()> {
+        let mut normalized = HashMap::with_capacity(self.external_packages.len());
+        for (key, value) in &self.external_packages {
+            let canon = crate_name_from_module_path(key);
+            if let Some(existing) = normalized.get(&canon) {
+                if existing != value {
+                    bail!(
+                        "conflicting [bindings.ruby.external_packages] entries for crate `{canon}`: \
+                         `{key}` = `{value}` vs existing `{existing}`"
+                    );
+                }
+            } else {
+                normalized.insert(canon, value.clone());
+            }
+        }
+        self.external_packages = normalized;
+        Ok(())
     }
 }
 

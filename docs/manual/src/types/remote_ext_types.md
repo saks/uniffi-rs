@@ -185,7 +185,8 @@ paths still use the namespace / `.rb` filename):
 
 ```
 [bindings.ruby.external_packages]
-# Map crate names from [External={name}] into Ruby module names
+# Map crate names from [External={name}] / Cargo.toml into Ruby module names.
+# `rust-crate-name` and `rust_crate_name` are the same key.
 rust-crate-name = "RubyModuleName"
 ```
 

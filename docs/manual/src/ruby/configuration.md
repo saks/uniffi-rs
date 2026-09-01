@@ -9,7 +9,7 @@ The generated Ruby modules can be configured using a `uniffi.toml` configuration
 | `cdylib_name`      | `uniffi_{namespace}`[^1] | The name of the compiled Rust library containing the FFI implementation (not needed when using `generate --library`). |
 | `cdylib_path`      | | An explicit path to the shared library, passed as the `ffi_lib` argument. |
 | `custom_types`     | | A map which controls how custom types are exposed to Ruby. See the [custom types section of the manual](../types/custom_types.md#custom-types-in-the-bindings-code) |
-| `external_packages` | | A map from Rust crate names to Ruby module names for use with [external types](../types/remote_ext_types.md). This controls how generated code *references* external modules (e.g. `OtherCrate::SomeType`). `require` paths still use each crate's UniFFI namespace (the generated `.rb` filename). The overridden module name must match the `module` name defined in that crate's generated bindings. |
+| `external_packages` | | A map from Rust crate names to Ruby module names for use with [external types](../types/remote_ext_types.md). Keys may use the Cargo package name (`my-crate`) or the underscored Rust crate name (`my_crate`); they are equivalent. This controls how generated code *references* external modules (e.g. `OtherCrate::SomeType`). `require` paths still use each crate's UniFFI namespace (the generated `.rb` filename). The overridden module name must match the `module` name defined in that crate's generated bindings. |
 | `rename`           | | A map to rename types, functions, methods, and their members in the generated Ruby bindings. See the [renaming section](../renaming.md). |
 | `exclude`          | | A list of crate names to exclude when generating bindings for a library (library mode). |
 
@@ -36,8 +36,9 @@ External Packages:
 
 ```toml
 [bindings.ruby.external_packages]
-# Map the crate name from [External={name}] to its Ruby module name
-rust_crate_name = "ExternalRubyModule"
+# Map the crate name from [External={name}] / Cargo.toml to its Ruby module name.
+# Hyphens and underscores are equivalent: `rust-crate-name` and `rust_crate_name` are the same key.
+rust-crate-name = "ExternalRubyModule"
 ```
 
 Refer to [`examples/custom-types/uniffi.toml`](https://github.com/mozilla/uniffi-rs/blob/main/examples/custom-types/uniffi.toml) for a complete example.

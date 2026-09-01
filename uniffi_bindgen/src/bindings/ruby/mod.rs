@@ -73,6 +73,7 @@ fn parse_config(
             .clone()
             .unwrap_or_else(|| format!("uniffi_{}", ci.namespace()))
     });
+    config.normalize_external_package_keys()?;
     Ok(config)
 }
 
@@ -96,13 +97,18 @@ fn apply_renames(components: &mut Vec<Component<Config>>) {
         }
     }
 
-    // Populate external_packages from peer crates.
-    // Each crate's module name is derived from its namespace UpperCamelCased,
-    // but this can be overridden by [bindings.ruby.external_packages] in uniffi.toml.
+    populate_external_packages(components);
+}
+
+/// Fill each crate's `external_packages` from peer crates.
+///
+/// Default module name is the peer's namespace converted to UpperCamelCase.
+/// User overrides in `[bindings.ruby.external_packages]` win; keys must already
+/// be normalized (`my-crate` → `my_crate`) via [`Config::normalize_external_package_keys`].
+fn populate_external_packages(components: &mut [Component<Config>]) {
     let packages = HashMap::<String, String>::from_iter(components.iter().map(|c| {
         (
             c.ci.crate_name().to_string(),
-            // Use the namespace converted to module name as the default package
             heck::ToUpperCamelCase::to_upper_camel_case(c.ci.namespace()),
         )
     }));
@@ -115,5 +121,57 @@ fn apply_renames(components: &mut Vec<Component<Config>>) {
                     .insert(ext_crate.to_string(), ext_package.clone());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn component(crate_name: &str, config: Config) -> Component<Config> {
+        Component {
+            ci: ComponentInterface::new(crate_name),
+            config,
+        }
+    }
+
+    #[test]
+    fn hyphenated_user_override_is_not_clobbered_by_auto_pop() {
+        let mut consumer_config = Config::default();
+        consumer_config
+            .external_packages
+            .insert("my-crate".into(), "Custom".into());
+        consumer_config.normalize_external_package_keys().unwrap();
+
+        let mut components = vec![
+            component("consumer", consumer_config),
+            component("my_crate", Config::default()),
+        ];
+        populate_external_packages(&mut components);
+        assert_eq!(
+            components[0]
+                .config
+                .external_packages
+                .get("my_crate")
+                .map(String::as_str),
+            Some("Custom")
+        );
+    }
+
+    #[test]
+    fn auto_pop_fills_missing_peer_crate() {
+        let mut components = vec![
+            component("consumer", Config::default()),
+            component("my_crate", Config::default()),
+        ];
+        populate_external_packages(&mut components);
+        assert!(components[0]
+            .config
+            .external_packages
+            .contains_key("my_crate"));
+        assert!(!components[0]
+            .config
+            .external_packages
+            .contains_key("consumer"));
     }
 }
