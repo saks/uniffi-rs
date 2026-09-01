@@ -10,7 +10,7 @@ def to_s
     :{{ display_fmt.ffi_func().name() }},
     {{ display_fmt|lower_method_self_rb(self) }}
   )
-  {{ self.lift_rb("result", display_fmt.return_type().unwrap()) }}
+  {{ self.lift_rb("result", display_fmt.return_type().unwrap())? }}
 end
 {%- endif %}
 
@@ -21,7 +21,7 @@ def inspect
     :{{ debug_fmt.ffi_func().name() }},
     {{ debug_fmt|lower_method_self_rb(self) }}
   )
-  {{ self.lift_rb("result", debug_fmt.return_type().unwrap()) }}
+  {{ self.lift_rb("result", debug_fmt.return_type().unwrap())? }}
 end
 {%- endif %}
 
@@ -32,9 +32,9 @@ def ==(other)
   result = ::{{ ci.namespace()|class_name_rb }}.rust_call(
     :{{ eq.ffi_func().name() }},
     {{ eq|lower_method_self_rb(self) }},
-    {{ self.lower_rb("other", eq.arguments()[0].as_type().borrow()) }}
+    {{ self.lower_rb("other", eq.arguments()[0].as_type().borrow())? }}
   )
-  {{ self.lift_rb("result", eq.return_type().unwrap()) }}
+  {{ self.lift_rb("result", eq.return_type().unwrap())? }}
 end
 {%- endif %}
 
@@ -45,7 +45,7 @@ def hash
     :{{ hash.ffi_func().name() }},
     {{ hash|lower_method_self_rb(self) }}
   )
-  {{ self.lift_rb("result", hash.return_type().unwrap()) }}
+  {{ self.lift_rb("result", hash.return_type().unwrap())? }}
 end
 
 def eql?(other)
@@ -63,9 +63,9 @@ def <=>(other)
   result = ::{{ ci.namespace()|class_name_rb }}.rust_call(
     :{{ cmp.ffi_func().name() }},
     {{ cmp|lower_method_self_rb(self) }},
-    {{ self.lower_rb("other", cmp.arguments()[0].as_type().borrow()) }}
+    {{ self.lower_rb("other", cmp.arguments()[0].as_type().borrow())? }}
   )
-  {{ self.lift_rb("result", cmp.return_type().unwrap()) }}
+  {{ self.lift_rb("result", cmp.return_type().unwrap())? }}
 rescue
   nil
 end

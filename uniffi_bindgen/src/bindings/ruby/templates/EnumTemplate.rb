@@ -30,7 +30,7 @@ class {{ e.name()|class_name_rb }}
     {%- if named_fields %}
     def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb -}}:
       {%- match field.default_value() %}
-      {%- when Some(default) %} {{ self.field_default_rb(field) }}
+      {%- when Some(default) %} {{ self.field_default_rb(field)? }}
       {%- else %}
       {% endmatch %}
       {%- if loop.last %}{% else %}, {% endif -%}{% endfor %})

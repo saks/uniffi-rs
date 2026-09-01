@@ -122,7 +122,7 @@ def self.rust_call_with_error(error_reader, fn_name, *args)
     raise consume_buffer_into_error(error_reader, status.error_buf)
   when CALL_PANIC
     if status.error_buf.len > 0
-      raise InternalError, {{ self.lift_rb("status.error_buf", &Type::String) }}
+      raise InternalError, {{ self.lift_rb("status.error_buf", &Type::String)? }}
     else
       raise InternalError, "Rust panic"
     end

@@ -17,7 +17,7 @@ end
 def {{ meth.name()|fn_name_rb }}({% call rb::arg_list_decl(meth) %}{% endcall %})
   {%- call rb::setup_args_extra_indent(meth) %}{% endcall %}
   result = {% call rb::to_ffi_call_with_lower_self(meth) %}{% endcall %}
-  return {{ self.lift_rb("result", return_type) }}
+  return {{ self.lift_rb("result", return_type)? }}
 end
 
 {%- when None %}

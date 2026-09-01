@@ -58,7 +58,7 @@ values[{{- field_num - 1 -}}]
 
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
-        {{- self.lower_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
+        {{- self.lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
         {%- if !loop.last %},{% endif %}
     {%- endfor %}
 {%- endmacro -%}
@@ -72,7 +72,7 @@ values[{{- field_num - 1 -}}]
     {%- for arg in func.arguments() -%}
         {{ arg.name()|var_name_rb }}
         {%- match arg.default_value() %}
-        {%- when Some(_) %} = {{ self.arg_default_rb(arg) }}
+        {%- when Some(_) %} = {{ self.arg_default_rb(arg)? }}
         {%- else %}
         {%- endmatch %}
         {%- if !loop.last %}, {% endif -%}
@@ -100,7 +100,7 @@ values[{{- field_num - 1 -}}]
       :{{ func.ffi_rust_future_free(ci) }},
       {%- match func.return_type() %}
       {%- when Some with (return_type) %}
-      Proc.new { |v| {{ self.lift_rb("v", return_type) }} },
+      Proc.new { |v| {{ self.lift_rb("v", return_type)? }} },
       {%- when None %}
       Proc.new { |v| nil },
       {%- endmatch %}
@@ -129,15 +129,15 @@ values[{{- field_num - 1 -}}]
 
 {%- macro setup_args(func) %}
     {%- for arg in func.arguments() %}
-    {{ arg.name()|var_name_rb }} = {{ self.coerce_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
-    {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
+    {{ arg.name()|var_name_rb }} = {{ self.coerce_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
+    {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
     {% endfor -%}
 {%- endmacro -%}
 
 {%- macro setup_args_extra_indent(meth) %}
         {%- for arg in meth.arguments() %}
-        {{ arg.name()|var_name_rb }} = {{ self.coerce_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
-        {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow()) }}
+        {{ arg.name()|var_name_rb }} = {{ self.coerce_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
+        {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
         {%- endfor %}
 {%- endmacro -%}
 
@@ -149,7 +149,7 @@ values[{{- field_num - 1 -}}]
     make_call = Proc.new do
       uniffi_obj.{{ method.name()|fn_name_rb }}(
         {%- for arg in method.arguments() %}
-        {{ self.lift_rb(arg.name(), arg.as_type().borrow()) }}{% if !loop.last %},{% endif %}
+        {{ self.lift_rb(arg.name(), arg.as_type().borrow())? }}{% if !loop.last %},{% endif %}
         {%- endfor %}
       )
     end
@@ -164,7 +164,7 @@ values[{{- field_num - 1 -}}]
       result_struct = UniFFILib::{{ method|foreign_future_result_rb }}.new
       {%- match method.return_type() %}
       {%- when Some with (return_type) %}
-      result_struct[:return_value] = {{ self.lower_rb("return_value", return_type) }}
+      result_struct[:return_value] = {{ self.lower_rb("return_value", return_type)? }}
       result_struct[:call_status] = RustCallStatus.new
       {%- when None %}
       result_struct[:call_status] = RustCallStatus.new
@@ -205,7 +205,7 @@ values[{{- field_num - 1 -}}]
     {%- match method.return_type() %}
     {%- when Some with (return_type) %}
     write_return_value = Proc.new do |v|
-      lowered = {{ self.lower_rb("v", return_type) }}
+      lowered = {{ self.lower_rb("v", return_type)? }}
       {%- let ffi_type_name = return_type|ffi_write_return_rb %}
       {%- if ffi_type_name == "rustbuffer" %}
       # Write a RustBuffer struct into the out pointer
@@ -234,7 +234,7 @@ values[{{- field_num - 1 -}}]
       {%- else %}
       {{ name|class_name_rb }},
       {%- endif %}
-      Proc.new { |e| {{ self.lower_rb("e", lower_type) }} }
+      Proc.new { |e| {{ self.lower_rb("e", lower_type)? }} }
 {%- endmacro %}
 
 {#-

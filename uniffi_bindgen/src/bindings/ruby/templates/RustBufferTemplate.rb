@@ -130,7 +130,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     {%- for field in rec.fields() %}
-    {{ self.check_lower_rb("v.{}"|format(field.name()|var_name_rb), field.as_type().borrow()) }}
+    {{ self.check_lower_rb("v.{}"|format(field.name()|var_name_rb), field.as_type().borrow())? }}
     {%- endfor %}
   end
 
@@ -157,9 +157,9 @@ class RustBuffer < FFI::Struct
     if v.{{ variant.name()|var_name_rb }}?
       {%- for field in variant.fields() %}
       {%- if field.name().is_empty() %}
-        {{ self.check_lower_rb("v.values[{}]"|format(loop.index0), field.as_type().borrow()) }}
+        {{ self.check_lower_rb("v.values[{}]"|format(loop.index0), field.as_type().borrow())? }}
       {%- else %}
-        {{ self.check_lower_rb("v.{}"|format(field.name()|var_name_rb), field.as_type().borrow()) }}
+        {{ self.check_lower_rb("v.{}"|format(field.name()|var_name_rb), field.as_type().borrow())? }}
       {%- endif %}
       {%- endfor %}
       return
@@ -186,7 +186,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     if !v.nil?
-      {{ self.check_lower_rb("v", inner_type.borrow()) }}
+      {{ self.check_lower_rb("v", inner_type.borrow())? }}
     end
   end
 
@@ -208,7 +208,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |item|
-      {{ self.check_lower_rb("item", inner_type.borrow()) }}
+      {{ self.check_lower_rb("item", inner_type.borrow())? }}
     end
   end
 
@@ -230,7 +230,7 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |item|
-      {{ self.check_lower_rb("item", inner_type.borrow()) }}
+      {{ self.check_lower_rb("item", inner_type.borrow())? }}
     end
   end
 
@@ -252,8 +252,8 @@ class RustBuffer < FFI::Struct
 
   def self.check_lower_{{ canonical_type_name }}(v)
     v.each do |k, v|
-      {{ self.check_lower_rb("k", k.borrow()) }}
-      {{ self.check_lower_rb("v", v.borrow()) }}
+      {{ self.check_lower_rb("k", k.borrow())? }}
+      {{ self.check_lower_rb("v", v.borrow())? }}
     end
   end
 

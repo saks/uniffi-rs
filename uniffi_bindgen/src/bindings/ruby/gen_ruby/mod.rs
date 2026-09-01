@@ -320,48 +320,51 @@ impl<'a> RubyWrapper<'a> {
         let module = if self.is_external_module(module_path) {
             self.external_type_module(module_path)
         } else {
-            class_name_rb_inner(self.ci.namespace()).expect("namespace class name")
+            class_name_rb_inner(self.ci.namespace())
+                .unwrap_or_else(|_| self.ci.namespace().to_string())
         };
         format!("::{module}")
     }
 
-    pub fn lift_rb(&self, nm: &str, type_: &Type) -> String {
+    pub fn lift_rb(&self, nm: &str, type_: &Type) -> Result<String, askama::Error> {
         let module = self.ffi_module_prefix(type_);
         filters::lift_rb_inner_dispatch(nm, type_, module.as_deref(), self)
-            .expect("lift_rb_inner_dispatch failed")
     }
 
-    pub fn lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
+    pub fn lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> Result<String, askama::Error> {
         let module = self.ffi_module_prefix(type_);
         filters::lower_rb_inner_dispatch(nm.as_ref(), type_, module.as_deref(), self)
-            .expect("lower_rb_inner_dispatch failed")
     }
 
-    pub fn check_lower_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
+    pub fn check_lower_rb(
+        &self,
+        nm: impl AsRef<str>,
+        type_: &Type,
+    ) -> Result<String, askama::Error> {
         let module = self.ffi_module_prefix(type_);
         filters::check_lower_rb_inner(nm.as_ref(), type_, module.as_deref(), self)
-            .expect("check_lower_rb_inner failed")
     }
 
-    pub fn coerce_rb(&self, nm: impl AsRef<str>, type_: &Type) -> String {
-        let ns = class_name_rb_inner(self.ci.namespace()).expect("namespace class name");
+    pub fn coerce_rb(&self, nm: impl AsRef<str>, type_: &Type) -> Result<String, askama::Error> {
+        let ns = class_name_rb_inner(self.ci.namespace())?;
         filters::coerce_rb_inner(nm, ns, type_, &self.config.custom_types, self)
-            .expect("coerce_rb failed")
     }
 
-    pub fn field_default_rb(&self, field: &Field) -> String {
+    pub fn field_default_rb(&self, field: &Field) -> Result<String, askama::Error> {
         match field.default_value() {
-            Some(default) => filters::default_rb_inner(default, &field.as_type(), self)
-                .expect("field_default_rb failed"),
-            None => panic!("field_default_rb called on field with no default value"),
+            Some(default) => filters::default_rb_inner(default, &field.as_type(), self),
+            None => Err(askama::Error::Custom(
+                anyhow::anyhow!("field_default_rb called on field with no default value").into(),
+            )),
         }
     }
 
-    pub fn arg_default_rb(&self, arg: &Argument) -> String {
+    pub fn arg_default_rb(&self, arg: &Argument) -> Result<String, askama::Error> {
         match arg.default_value() {
-            Some(default) => filters::default_rb_inner(default, &arg.as_type(), self)
-                .expect("arg_default_rb failed"),
-            None => panic!("arg_default_rb called on arg with no default value"),
+            Some(default) => filters::default_rb_inner(default, &arg.as_type(), self),
+            None => Err(askama::Error::Custom(
+                anyhow::anyhow!("arg_default_rb called on arg with no default value").into(),
+            )),
         }
     }
 
@@ -444,21 +447,23 @@ mod filters {
     ) -> Result<String, askama::Error> {
         let ffi_type = FfiType::from(return_type);
 
-        Ok(match &ffi_type {
-            FfiType::Int8 => "write_int8".to_string(),
-            FfiType::UInt8 => "write_uint8".to_string(),
-            FfiType::Int16 => "write_int16".to_string(),
-            FfiType::UInt16 => "write_uint16".to_string(),
-            FfiType::Int32 => "write_int32".to_string(),
-            FfiType::UInt32 => "write_uint32".to_string(),
-            FfiType::Int64 => "write_int64".to_string(),
-            FfiType::UInt64 => "write_uint64".to_string(),
-            FfiType::Float32 => "write_float".to_string(),
-            FfiType::Float64 => "write_double".to_string(),
-            FfiType::Handle => "write_uint64".to_string(),
-            FfiType::RustBuffer(_) => "rustbuffer".to_string(),
-            _ => panic!("Unsupported FFI return type for callback: {ffi_type:?}"),
-        })
+        match &ffi_type {
+            FfiType::Int8 => Ok("write_int8".to_string()),
+            FfiType::UInt8 => Ok("write_uint8".to_string()),
+            FfiType::Int16 => Ok("write_int16".to_string()),
+            FfiType::UInt16 => Ok("write_uint16".to_string()),
+            FfiType::Int32 => Ok("write_int32".to_string()),
+            FfiType::UInt32 => Ok("write_uint32".to_string()),
+            FfiType::Int64 => Ok("write_int64".to_string()),
+            FfiType::UInt64 => Ok("write_uint64".to_string()),
+            FfiType::Float32 => Ok("write_float".to_string()),
+            FfiType::Float64 => Ok("write_double".to_string()),
+            FfiType::Handle => Ok("write_uint64".to_string()),
+            FfiType::RustBuffer(_) => Ok("rustbuffer".to_string()),
+            _ => Err(askama::Error::Custom(
+                anyhow::anyhow!("Unsupported FFI return type for callback: {ffi_type:?}").into(),
+            )),
+        }
     }
 
     /// Return the Ruby default value for an FFI return type (used in async error callbacks).
@@ -468,7 +473,7 @@ mod filters {
         _: &dyn askama::Values,
     ) -> Result<String, askama::Error> {
         let ffi_type = FfiType::from(return_type);
-        Ok(match &ffi_type {
+        match &ffi_type {
             FfiType::Int8
             | FfiType::UInt8
             | FfiType::Int16
@@ -477,11 +482,13 @@ mod filters {
             | FfiType::UInt32
             | FfiType::Int64
             | FfiType::UInt64
-            | FfiType::Handle => "0".to_string(),
-            FfiType::Float32 | FfiType::Float64 => "0.0".to_string(),
-            FfiType::RustBuffer(_) => "RustBuffer.new".to_string(),
-            _ => panic!("Unsupported FFI return type for callback: {ffi_type:?}"),
-        })
+            | FfiType::Handle => Ok("0".to_string()),
+            FfiType::Float32 | FfiType::Float64 => Ok("0.0".to_string()),
+            FfiType::RustBuffer(_) => Ok("RustBuffer.new".to_string()),
+            _ => Err(askama::Error::Custom(
+                anyhow::anyhow!("Unsupported FFI return type for callback: {ffi_type:?}").into(),
+            )),
+        }
     }
 
     /// Return the ForeignFutureResult struct name for a method's return type.
@@ -559,7 +566,11 @@ mod filters {
                         enum_name_rb_inner(v)?
                     )
                 }
-                _ => panic!("Unexpected type in enum literal: {type_:?}"),
+                _ => {
+                    return Err(askama::Error::Custom(
+                        anyhow::anyhow!("Unexpected type in enum literal: {type_:?}").into(),
+                    ));
+                }
             },
             // https://docs.ruby-lang.org/en/2.0.0/syntax/literals_rdoc.html
             Literal::Int(i, radix, _) => match radix {
@@ -931,11 +942,10 @@ mod filters {
         _: &dyn askama::Values,
         wrapper: &RubyWrapper<'filter>,
     ) -> Result<String, askama::Error> {
-        let self_type = meth
-            .self_type()
-            .expect("Trait method must have a self type");
-
-        Ok(wrapper.lower_rb("self", &self_type))
+        let self_type = meth.self_type().ok_or_else(|| {
+            askama::Error::Custom(anyhow::anyhow!("Trait method must have a self type").into())
+        })?;
+        wrapper.lower_rb("self", &self_type)
     }
 
     /// Render a Ruby integer literal for the discriminant of the variant at `index` in enum `e`.
