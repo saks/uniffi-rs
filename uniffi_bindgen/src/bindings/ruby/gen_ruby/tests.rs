@@ -1,5 +1,28 @@
 use super::{crate_name_from_module_path, is_reserved_word, Config, RubyWrapper};
 use crate::interface::ComponentInterface;
+use std::collections::BTreeMap;
+use uniffi_meta::NamespaceMetadata;
+
+fn namespace(crate_name: &str, name: &str) -> NamespaceMetadata {
+    NamespaceMetadata {
+        crate_name: crate_name.to_string(),
+        name: name.to_string(),
+    }
+}
+
+fn ci_with_namespaces(
+    udl: &str,
+    crate_name: &str,
+    namespaces: &[(&str, &str)],
+) -> ComponentInterface {
+    let mut ci = ComponentInterface::from_webidl(udl, crate_name).unwrap();
+    let map = namespaces
+        .iter()
+        .map(|(c, n)| (c.to_string(), namespace(c, n)))
+        .collect::<BTreeMap<_, _>>();
+    ci.set_crate_to_namespace_map(map);
+    ci
+}
 
 #[test]
 fn when_reserved_word() {
@@ -120,4 +143,138 @@ fn is_external_module_treats_hyphenated_name_as_same_crate() {
     assert!(!wrapper.is_external_module("foo-bar::sub"));
     assert!(wrapper.is_external_module("other_crate"));
     assert!(wrapper.is_external_module("other-crate"));
+}
+
+const TWO_TYPES_UDL: &str = r#"
+    namespace consumer {
+        TypeA get_a();
+        TypeB get_b();
+    };
+
+    [External="crate_a"]
+    typedef dictionary TypeA;
+
+    [External="crate_b"]
+    typedef dictionary TypeB;
+"#;
+
+#[test]
+fn external_mixin_modules_collapses_two_types_from_same_crate() {
+    let ci = ci_with_namespaces(
+        r#"
+        namespace consumer {
+            TypeA get_a();
+            TypeB get_b();
+        };
+
+        [External="crate_a"]
+        typedef dictionary TypeA;
+
+        [External="crate_a"]
+        typedef dictionary TypeB;
+        "#,
+        "consumer",
+        &[("consumer", "consumer"), ("crate_a", "ns_a")],
+    );
+    let mixins = RubyWrapper::new(Config::default(), &ci)
+        .external_mixin_modules()
+        .unwrap();
+    assert_eq!(mixins.len(), 1);
+    assert_eq!(mixins[0].module_name, "NsA");
+    assert_eq!(mixins[0].require_path, "ns_a");
+}
+
+#[test]
+fn external_mixin_modules_lists_each_crate() {
+    let ci = ci_with_namespaces(
+        TWO_TYPES_UDL,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_a", "ns_a"),
+            ("crate_b", "ns_b"),
+        ],
+    );
+    let mut mixins = RubyWrapper::new(Config::default(), &ci)
+        .external_mixin_modules()
+        .unwrap();
+    mixins.sort_by(|a, b| a.require_path.cmp(&b.require_path));
+    assert_eq!(mixins.len(), 2);
+    assert_eq!(mixins[0].module_name, "NsA");
+    assert_eq!(mixins[0].require_path, "ns_a");
+    assert_eq!(mixins[1].module_name, "NsB");
+    assert_eq!(mixins[1].require_path, "ns_b");
+}
+
+#[test]
+fn external_mixin_modules_errors_on_camel_case_collision() {
+    let ci = ci_with_namespaces(
+        TWO_TYPES_UDL,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_a", "foo_bar"),
+            ("crate_b", "fooBar"),
+        ],
+    );
+    let err = RubyWrapper::new(Config::default(), &ci)
+        .external_mixin_modules()
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("FooBar"), "{msg}");
+    assert!(msg.contains("crate_a"), "{msg}");
+    assert!(msg.contains("crate_b"), "{msg}");
+}
+
+#[test]
+fn external_mixin_modules_errors_on_external_packages_collision() {
+    let ci = ci_with_namespaces(
+        TWO_TYPES_UDL,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_a", "ns_a"),
+            ("crate_b", "ns_b"),
+        ],
+    );
+    let mut config = Config::default();
+    config
+        .external_packages
+        .insert("crate_a".into(), "Shared".into());
+    config
+        .external_packages
+        .insert("crate_b".into(), "Shared".into());
+    let err = RubyWrapper::new(config, &ci)
+        .external_mixin_modules()
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("Shared"), "{msg}");
+    assert!(msg.contains("crate_a"), "{msg}");
+    assert!(msg.contains("crate_b"), "{msg}");
+}
+
+#[test]
+fn external_mixin_modules_collapses_hyphenated_and_underscored_crate() {
+    let ci = ci_with_namespaces(
+        r#"
+        namespace consumer {
+            TypeA get_a();
+            TypeB get_b();
+        };
+
+        [External="my-crate"]
+        typedef dictionary TypeA;
+
+        [External="my_crate"]
+        typedef dictionary TypeB;
+        "#,
+        "consumer",
+        &[("consumer", "consumer"), ("my_crate", "my_ns")],
+    );
+    let mixins = RubyWrapper::new(Config::default(), &ci)
+        .external_mixin_modules()
+        .unwrap();
+    assert_eq!(mixins.len(), 1);
+    assert_eq!(mixins[0].module_name, "MyNs");
+    assert_eq!(mixins[0].require_path, "my_ns");
 }

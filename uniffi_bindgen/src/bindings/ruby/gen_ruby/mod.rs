@@ -20,6 +20,7 @@ const RESERVED_WORDS: &[&str] = &[
 ];
 
 // Info for an external crate's mixin modules, used in templates.
+#[derive(Debug)]
 pub struct ExternalMixin {
     pub module_name: String,
     pub require_path: String,
@@ -244,35 +245,57 @@ impl<'a> RubyWrapper<'a> {
         }
     }
 
-    /// Returns deduplicated list of *direct* external mixin info (module name + require path).
+    /// Returns mixins for each *direct* external crate (module name + require path).
     ///
-    /// Used by wrapper.rb for `require` and by RustBufferBuilder/Stream mixins for `include`.
-    /// Transitive crates are not listed here: each crate's mixin includes its own direct
-    /// dependency mixins, so a consumer of B::Rec that contains C::Thing picks up C via
-    /// B's mixin ancestor chain. Nested C types are absent from `iter_external_types()`.
-    pub fn external_mixin_modules(&self) -> Vec<ExternalMixin> {
-        let mut seen = BTreeSet::new();
+    /// Uniqueness is per crate, not per Ruby module name: `require` paths are the
+    /// UniFFI namespace / `.rb` filename, which is crate-identity. Two types from
+    /// the same crate collapse to one entry. Two crates that would emit the same
+    /// Ruby module name are an error — this list also drives `include ::Mod::Mixin`,
+    /// and a collision would either drop a `require` or merge unrelated modules.
+    ///
+    /// Transitive crates are not listed here: each crate's mixin includes its own
+    /// direct dependency mixins, so a consumer of B::Rec that contains C::Thing
+    /// picks up C via B's mixin ancestor chain. Nested C types are absent from
+    /// `iter_external_types()`.
+    pub fn external_mixin_modules(&self) -> Result<Vec<ExternalMixin>, askama::Error> {
+        let mut seen_crates = BTreeSet::new();
+        let mut module_to_crate = HashMap::new();
         let mut result = Vec::new();
 
         for typ in self.ci.iter_external_types() {
-            if let Some(module_path) = typ.module_path() {
-                let module_name = self.external_type_module(module_path);
-                if seen.insert(module_name.clone()) {
-                    let require_path = self
-                        .ci
-                        .namespace_for_module_path(module_path)
-                        .unwrap_or(module_path)
-                        .to_owned();
-
-                    result.push(ExternalMixin {
-                        module_name,
-                        require_path,
-                    });
-                }
+            let Some(module_path) = typ.module_path() else {
+                continue;
+            };
+            let crate_name = crate_name_from_module_path(module_path);
+            if !seen_crates.insert(crate_name.clone()) {
+                continue;
             }
+
+            let module_name = self.external_type_module(module_path);
+            if let Some(existing) = module_to_crate.get(&module_name) {
+                return Err(askama::Error::Custom(
+                    anyhow::anyhow!(
+                        "Ruby module `{module_name}` is used by both crate `{existing}` and crate `{crate_name}`; \
+                         each crate must have a unique Ruby module name"
+                    )
+                    .into(),
+                ));
+            }
+            module_to_crate.insert(module_name.clone(), crate_name);
+
+            let require_path = self
+                .ci
+                .namespace_for_module_path(module_path)
+                .unwrap_or(module_path)
+                .to_owned();
+
+            result.push(ExternalMixin {
+                module_name,
+                require_path,
+            });
         }
 
-        result
+        Ok(result)
     }
 
     /// Returns deduplicated require paths declared by external custom type configs.

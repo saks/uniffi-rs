@@ -9,7 +9,7 @@
 # ancestors without naming C in its own API.
 # InternalError in these methods is this crate's class for the same reason.
 module RustBufferStreamMixin
-  {%- for ext in self.external_mixin_modules() %}
+  {%- for ext in self.external_mixin_modules()? %}
   include ::{{ ext.module_name }}::RustBufferStreamMixin
   {%- endfor %}
   {% for typ in ci.iter_local_types() -%}

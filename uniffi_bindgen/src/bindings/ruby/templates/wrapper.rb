@@ -20,7 +20,7 @@ require 'set'
 require 'monitor'
 {%- endif %}
 
-{%- for ext in self.external_mixin_modules() %}
+{%- for ext in self.external_mixin_modules()? %}
 require '{{ ext.require_path }}'
 {%- endfor %}
 

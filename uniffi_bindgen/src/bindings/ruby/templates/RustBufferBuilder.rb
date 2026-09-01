@@ -9,7 +9,7 @@
 # mixin is closed over nested types from further crates. See
 # RustBufferStreamMixin.
 module RustBufferBuilderMixin
-  {%- for ext in self.external_mixin_modules() %}
+  {%- for ext in self.external_mixin_modules()? %}
   include ::{{ ext.module_name }}::RustBufferBuilderMixin
   {%- endfor %}
   {% for typ in ci.iter_local_types() -%}
