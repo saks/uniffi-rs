@@ -177,7 +177,8 @@ without importing them.
 For Ruby, external types are supported in library mode
 (`generate --library [path-to-cdylib]`). Single-UDL generation (`generate [udl-path]`)
 is not supported for external types, as the generator cannot resolve types from
-other crates without their compiled scaffolding metadata. Library mode generates
+other crates without their compiled scaffolding metadata; bindgen errors rather
+than emitting incomplete bindings. Library mode generates
 all bindings files together and uses `require` to pull in external modules at runtime.
 By default, UniFFI assumes the Ruby module name is the UniFFI namespace converted to
 UpperCamelCase. This can be overridden in `uniffi.toml` (references only, `require`

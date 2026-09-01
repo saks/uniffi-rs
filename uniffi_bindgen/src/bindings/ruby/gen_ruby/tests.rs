@@ -1,4 +1,5 @@
 use super::{crate_name_from_module_path, is_reserved_word, Config, RubyWrapper};
+use crate::bindings::ruby::generate_ruby_bindings;
 use crate::interface::ComponentInterface;
 use std::collections::BTreeMap;
 use uniffi_meta::NamespaceMetadata;
@@ -157,6 +158,27 @@ const TWO_TYPES_UDL: &str = r#"
     [External="crate_b"]
     typedef dictionary TypeB;
 "#;
+
+#[test]
+fn external_mixin_modules_errors_when_external_crate_namespace_unresolved() {
+    let ci = ComponentInterface::from_webidl(TWO_TYPES_UDL, "consumer").unwrap();
+    let err = RubyWrapper::new(Config::default(), &ci)
+        .external_mixin_modules()
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("crate_a") || msg.contains("crate_b"), "{msg}");
+    assert!(
+        msg.contains("Single-UDL generation is not supported"),
+        "{msg}"
+    );
+
+    let render_err = generate_ruby_bindings(&Config::default(), &ci).unwrap_err();
+    let render_msg = format!("{render_err:#}");
+    assert!(
+        render_msg.contains("Single-UDL generation is not supported"),
+        "{render_msg}"
+    );
+}
 
 #[test]
 fn external_mixin_modules_collapses_two_types_from_same_crate() {

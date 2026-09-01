@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use askama::Template;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
@@ -271,10 +271,29 @@ impl<'a> RubyWrapper<'a> {
                 continue;
             }
 
+            // Single-UDL generation has no crate→namespace map for dependencies.
+            // Falling back to the crate name produces the wrong `require` path
+            // whenever the external crate's UniFFI namespace differs from its
+            // crate name (e.g. crate `uniffi_one`, namespace `uniffi_one_ns`).
+            let require_path = match self.ci.namespace_for_module_path(module_path) {
+                Ok(ns) => ns.to_owned(),
+                Err(_) => {
+                    return Err(askama::Error::Custom(
+                        anyhow!(
+                            "Cannot resolve namespace for external crate `{crate_name}`. \
+                             Single-UDL generation is not supported for external types; generate from a \
+                             compiled library (e.g. `uniffi-bindgen generate path/to/libfoo.dylib --language ruby`) \
+                             so UniFFI can load scaffolding metadata for all crates."
+                        )
+                        .into(),
+                    ));
+                }
+            };
+
             let module_name = self.external_type_module(module_path);
             if let Some(existing) = module_to_crate.get(&module_name) {
                 return Err(askama::Error::Custom(
-                    anyhow::anyhow!(
+                    anyhow!(
                         "Ruby module `{module_name}` is used by both crate `{existing}` and crate `{crate_name}`; \
                          each crate must have a unique Ruby module name"
                     )
@@ -282,12 +301,6 @@ impl<'a> RubyWrapper<'a> {
                 ));
             }
             module_to_crate.insert(module_name.clone(), crate_name);
-
-            let require_path = self
-                .ci
-                .namespace_for_module_path(module_path)
-                .unwrap_or(module_path)
-                .to_owned();
 
             result.push(ExternalMixin {
                 module_name,
