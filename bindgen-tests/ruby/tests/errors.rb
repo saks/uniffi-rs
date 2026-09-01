@@ -68,4 +68,38 @@ class TestErrors < Test::Unit::TestCase
 
     assert rescued
   end
+
+  def test_variant_predicates
+    err = assert_raises(TestError::Failure1) { UniffiBindgenTests.func_with_error(0) }
+
+    assert err.failure1?
+    assert !err.failure2?
+    assert !err.failure3?
+
+    err2 = assert_raises(TestError::Failure2) { UniffiBindgenTests.func_with_error(1) }
+
+    assert !err2.failure1?
+    assert err2.failure2?
+    assert !err2.failure3?
+
+    err3 = assert_raises(TestError::Failure3) { UniffiBindgenTests.func_with_error(50) }
+
+    assert !err3.failure1?
+    assert !err3.failure2?
+    assert err3.failure3?
+  end
+
+  def test_error_no_data_predicates
+    err = assert_raises(TestErrorNoData::Failure1) { UniffiBindgenTests.func_with_error_no_data(0) }
+
+    assert err.failure1?
+    assert !err.failure2?
+    assert !err.failure3?
+
+    err2 = assert_raises(TestErrorNoData::Failure2) { UniffiBindgenTests.func_with_error_no_data(1) }
+
+    assert !err2.failure1?
+    assert err2.failure2?
+    assert !err2.failure3?
+  end
 end

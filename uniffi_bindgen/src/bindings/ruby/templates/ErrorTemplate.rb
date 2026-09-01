@@ -28,8 +28,19 @@ class {{ e.name()|class_name_rb }}
     {%- endfor %}
 {% else %}
 module {{ e.name()|class_name_rb }}
+  {#- Predicates once per error type, included by every variant class.
+      Emitting them on each class is O(N²) and blows up large error enums. #}
+  module UniffiVariantPredicates
+    {%- for pred_variant in e.variants() %}
+    def {{ pred_variant.name()|var_name_rb }}?
+      instance_of? {{ e.name()|class_name_rb }}::{{ pred_variant.name()|class_name_rb }}
+    end
+    {%- endfor %}
+  end
+
   {%- for variant in e.variants() %}
   class {{ variant.name()|class_name_rb }} < StandardError
+    include UniffiVariantPredicates
     {%- let named_fields = variant.has_fields() && !variant.fields()[0].name().is_empty() %}
     {%- if named_fields %}
     def initialize({% for field in variant.fields() %}{{ field.name()|var_name_rb }}:{% if !loop.last %}, {% endif %}{% endfor %})
@@ -73,14 +84,10 @@ module {{ e.name()|class_name_rb }}
       {%- endif %}
 
     end
-
-    {% for variant in e.variants() %}
-    def {{ variant.name()|var_name_rb }}?
-      instance_of? {{ e.name()|class_name_rb }}::{{ variant.name()|class_name_rb }}
-    end
-    {% endfor %}
   end
   {%- endfor %}
+
+  private_constant :UniffiVariantPredicates
 {% endif %}
 end
 {% endif %}
