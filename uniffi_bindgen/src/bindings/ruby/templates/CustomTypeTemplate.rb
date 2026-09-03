@@ -2,14 +2,15 @@
 {%- match config.custom_types.get(name.as_str()) %}
 {%- when None %}
 # Custom type `{{ name }}` - no binding config, backed by builtin `{{ self::canonical_name(builtin) }}`.
-# Values cross the FFI as the builtin type unchanged.
+# Identity lower coerces the builtin (`uniffi_in_range` / `uniffi_utf8` / …)
+# so imported primitive FFI args still run `to_int` / `to_str` here.
 
 def self.uniffi_lift_{{ canonical_type_name }}(raw)
   raw
 end
 
 def self.uniffi_lower_{{ canonical_type_name }}(v)
-  v
+  {{ self.coerce_rb("v", builtin)? }}
 end
 
 def self.uniffi_check_lower_{{ canonical_type_name }}(v)
@@ -42,7 +43,12 @@ def self.uniffi_lower_{{ canonical_type_name }}(v)
 {%- if cfg.has_conversion() %}
   {{ cfg.lower("v") }}
 {%- else %}
+{%- match cfg.type_name %}
+{%- when Some(_) %}
   v
+{%- else %}
+  {{ self.coerce_rb("v", builtin)? }}
+{%- endmatch %}
 {%- endif %}
 end
 

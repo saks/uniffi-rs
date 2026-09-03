@@ -31,4 +31,39 @@ class TestExternalTypes < Test::Unit::TestCase
     result = UniffiBindgenTests.roundtrip_ext_custom_type(789)
     assert_equal 789, result
   end
+
+  # Identity imported u64 newtypes skip consumer coerce; defining-crate
+  # `uniffi_lower_*` must still run `uniffi_in_range` (including `to_int`).
+  def test_ext_custom_type_rejects_negative_like_local
+    local = assert_raises(RangeError) { UniffiBindgenTests.roundtrip_custom_type1(-1) }
+    imported = assert_raises(RangeError) { UniffiBindgenTests.roundtrip_ext_custom_type(-1) }
+
+    assert_equal local.message, imported.message
+    assert_equal "u64 requires 0 <= value < #{2**64}", imported.message
+  end
+
+  def test_ext_custom_type_rejects_non_integer_like_local
+    local = assert_raises(TypeError) { UniffiBindgenTests.roundtrip_custom_type1('nope') }
+    imported = assert_raises(TypeError) { UniffiBindgenTests.roundtrip_ext_custom_type('nope') }
+
+    assert_equal local.message, imported.message
+    assert_equal 'no implicit conversion of nope into Integer', imported.message
+  end
+
+  # Ruby 4 Float#to_int truncates (1.9 -> 1). Both paths must agree; FFI
+  # `:uint64` without `uniffi_in_range` would not go through `to_int`.
+  def test_ext_custom_type_coerces_float_like_local
+    assert_equal 1, UniffiBindgenTests.roundtrip_custom_type1(1.9)
+    assert_equal 1, UniffiBindgenTests.roundtrip_ext_custom_type(1.9)
+  end
+
+  def test_ext_custom_type_preserves_to_int_coercion
+    int_like = Object.new
+    def int_like.to_int
+      7
+    end
+
+    assert_equal 7, UniffiBindgenTests.roundtrip_custom_type1(int_like)
+    assert_equal 7, UniffiBindgenTests.roundtrip_ext_custom_type(int_like)
+  end
 end

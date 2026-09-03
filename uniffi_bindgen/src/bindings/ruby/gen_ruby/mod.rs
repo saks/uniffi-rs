@@ -353,11 +353,11 @@ impl<'a> RubyWrapper<'a> {
 
     /// Defining crate module and builtin for an imported custom type.
     ///
-    /// Used by `coerce_rb` to treat an imported custom type as already the
-    /// foreign value (skip builtin coercion). Lift/lower/check_lower walk
-    /// every `Type::Custom` node in dispatch and call that crate's
-    /// `uniffi_{lift,lower,check_lower}_*` — including when the custom type
-    /// is the builtin of another custom type (`LocalUrl` wrapping `Url`).
+    /// Used by `coerce_rb` to skip consumer-side builtin coercion. Identity
+    /// imported newtypes coerce inside the defining crate's `uniffi_lower_*`.
+    /// Lift/lower/check_lower walk every `Type::Custom` node and call that
+    /// crate's `uniffi_{lift,lower,check_lower}_*` — including when the
+    /// custom type is the builtin of another custom type (`LocalUrl` wrapping `Url`).
     fn external_custom<'b>(&self, type_: &'b Type) -> Option<(String, &'b Type)> {
         match type_ {
             Type::Box { inner_type } => self.external_custom(inner_type),
@@ -787,8 +787,9 @@ mod filters {
             }
             Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type, custom_types, wrapper)?,
             Type::Custom { name, builtin, .. } => {
-                // Config-backed or imported buffer-backed custom types are
-                // already the foreign value; skip builtin coercion.
+                // Config-backed and imported customs skip consumer-side builtin
+                // coerce. Identity newtypes coerce inside the defining crate's
+                // `uniffi_lower_*` so `to_int` / `to_str` still flow to FFI.
                 if custom_types.contains_key(name) || wrapper.is_external_custom(type_) {
                     nm.to_string()
                 } else {

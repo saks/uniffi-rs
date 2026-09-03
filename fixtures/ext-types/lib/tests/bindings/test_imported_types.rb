@@ -163,6 +163,34 @@ class TestImportedTypes < Test::Unit::TestCase
     assert_equal 3, ImportedTypesLib.get_imported_handle_u8(nil)
   end
 
+  # Identity imported Guid skips consumer coerce; defining-crate
+  # `uniffi_lower_TypeGuid` must still run `uniffi_utf8` (including `to_str`).
+  def test_imported_guid_runs_uniffi_utf8
+    err = assert_raises(TypeError) { ImportedTypesLib.get_imported_guid(123) }
+    local = assert_raises(TypeError) { ExtTypesCustom.get_guid(123) }
+
+    assert_equal local.message, err.message
+    assert_equal 'no implicit conversion of 123 into String', err.message
+  end
+
+  def test_imported_guid_rejects_invalid_utf8
+    bad = "\xFF".dup.force_encoding(Encoding::UTF_8)
+    err = assert_raises(Encoding::InvalidByteSequenceError) do
+      ImportedTypesLib.get_imported_guid(bad)
+    end
+
+    assert_equal 'not a valid UTF-8 encoded string', err.message
+  end
+
+  def test_imported_guid_preserves_to_str_coercion
+    str_like = Object.new
+    def str_like.to_str
+      'guid'
+    end
+
+    assert_equal 'guid', ImportedTypesLib.get_imported_guid(str_like)
+  end
+
   def test_direct_custom_types
     assert_equal 'guid', ExtTypesCustom.get_guid('guid')
     assert_equal 'ouid', ExtTypesCustom.get_ouid('ouid')

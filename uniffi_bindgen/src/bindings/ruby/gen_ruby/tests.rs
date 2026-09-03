@@ -333,3 +333,55 @@ fn external_mixin_modules_collapses_hyphenated_and_underscored_crate() {
     assert_eq!(mixins[0].module_name, "MyNs");
     assert_eq!(mixins[0].require_path, "my_ns");
 }
+
+#[test]
+fn identity_custom_lower_coerces_integer_builtin() {
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace test {
+            Handle id(Handle h);
+        };
+
+        [Custom]
+        typedef u64 Handle;
+        "#,
+        "test",
+    )
+    .unwrap();
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+    let lower = src
+        .split("def self.uniffi_lower_TypeHandle(v)")
+        .nth(1)
+        .expect("identity lower for Handle");
+    let body = lower.split("def self.").next().unwrap();
+    assert!(
+        body.contains("uniffi_in_range(v, \"u64\""),
+        "identity u64 custom lower must coerce via uniffi_in_range, got:\n{body}"
+    );
+}
+
+#[test]
+fn identity_custom_lower_coerces_string_builtin() {
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace test {
+            Guid id(Guid g);
+        };
+
+        [Custom]
+        typedef string Guid;
+        "#,
+        "test",
+    )
+    .unwrap();
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+    let lower = src
+        .split("def self.uniffi_lower_TypeGuid(v)")
+        .nth(1)
+        .expect("identity lower for Guid");
+    let body = lower.split("def self.").next().unwrap();
+    assert!(
+        body.contains("uniffi_utf8(v)"),
+        "identity string custom lower must coerce via uniffi_utf8, got:\n{body}"
+    );
+}
