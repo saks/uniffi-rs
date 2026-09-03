@@ -1,7 +1,9 @@
 use super::{crate_name_from_module_path, is_reserved_word, Config, RubyWrapper};
 use crate::bindings::ruby::generate_ruby_bindings;
-use crate::interface::ComponentInterface;
+use crate::interface::{ComponentInterface, Type};
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use uniffi_meta::NamespaceMetadata;
 
 fn namespace(crate_name: &str, name: &str) -> NamespaceMetadata {
@@ -202,7 +204,6 @@ fn external_mixin_modules_collapses_two_types_from_same_crate() {
         .external_mixin_modules()
         .unwrap();
     assert_eq!(mixins.len(), 1);
-    assert_eq!(mixins[0].module_name, "NsA");
     assert_eq!(mixins[0].require_path, "ns_a");
 }
 
@@ -222,9 +223,7 @@ fn external_mixin_modules_lists_each_crate() {
         .unwrap();
     mixins.sort_by(|a, b| a.require_path.cmp(&b.require_path));
     assert_eq!(mixins.len(), 2);
-    assert_eq!(mixins[0].module_name, "NsA");
     assert_eq!(mixins[0].require_path, "ns_a");
-    assert_eq!(mixins[1].module_name, "NsB");
     assert_eq!(mixins[1].require_path, "ns_b");
 }
 
@@ -304,7 +303,6 @@ fn external_mixin_modules_ignores_unused_external_packages_entry() {
         .external_mixin_modules()
         .unwrap();
     assert_eq!(mixins.len(), 1);
-    assert_eq!(mixins[0].module_name, "NsB");
     assert_eq!(mixins[0].require_path, "ns_b");
 }
 
@@ -330,7 +328,6 @@ fn external_mixin_modules_collapses_hyphenated_and_underscored_crate() {
         .external_mixin_modules()
         .unwrap();
     assert_eq!(mixins.len(), 1);
-    assert_eq!(mixins[0].module_name, "MyNs");
     assert_eq!(mixins[0].require_path, "my_ns");
 }
 
@@ -384,4 +381,217 @@ fn identity_custom_lower_coerces_string_builtin() {
         body.contains("uniffi_utf8(v)"),
         "identity string custom lower must coerce via uniffi_utf8, got:\n{body}"
     );
+}
+
+#[test]
+fn mixin_owner_module_roots_external_record() {
+    let ci = ci_with_namespaces(
+        TWO_TYPES_UDL,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_a", "ns_a"),
+            ("crate_b", "ns_b"),
+        ],
+    );
+    let w = RubyWrapper::new(Config::default(), &ci);
+    let type_a = ci.get_type("TypeA").unwrap();
+    assert_eq!(
+        w.rust_buffer_write(&type_a).unwrap(),
+        "::NsA::RustBufferBuilderMixin.write_TypeTypeA"
+    );
+    assert_eq!(
+        w.rust_buffer_read(&type_a).unwrap(),
+        "::NsA::RustBufferStreamMixin.read_TypeTypeA"
+    );
+
+    let local = Type::Record {
+        module_path: "consumer".into(),
+        name: "Local".into(),
+    };
+    assert_eq!(
+        w.rust_buffer_write(&local).unwrap(),
+        "::Consumer::RustBufferBuilderMixin.write_TypeLocal"
+    );
+
+    let optional_ext = Type::Optional {
+        inner_type: Box::new(type_a.clone()),
+    };
+    assert_eq!(
+        w.rust_buffer_write(&optional_ext).unwrap(),
+        "::Consumer::RustBufferBuilderMixin.write_OptionalTypeTypeA"
+    );
+
+    assert_eq!(
+        w.rust_buffer_write(&Type::String).unwrap(),
+        "::Consumer::RustBufferBuilderMixin.write_string"
+    );
+}
+
+#[test]
+fn rust_buffer_write_qualifies_external_record() {
+    let ci = ci_with_namespaces(
+        TWO_TYPES_UDL,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_a", "ns_a"),
+            ("crate_b", "ns_b"),
+        ],
+    );
+    let w = RubyWrapper::new(Config::default(), &ci);
+    let type_a = ci.get_type("TypeA").unwrap();
+    let callee = w.rust_buffer_write(&type_a).unwrap();
+    assert_eq!(callee, "::NsA::RustBufferBuilderMixin.write_TypeTypeA");
+    assert!(
+        !callee.contains('('),
+        "callee must not bake argument list: {callee}"
+    );
+}
+
+#[test]
+fn generated_consumer_does_not_include_foreign_mixins() {
+    let ci = ci_with_namespaces(
+        TWO_TYPES_UDL,
+        "consumer",
+        &[
+            ("consumer", "consumer"),
+            ("crate_a", "ns_a"),
+            ("crate_b", "ns_b"),
+        ],
+    );
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+    assert!(src.contains("require 'ns_a'"), "{src}");
+    assert!(src.contains("require 'ns_b'"), "{src}");
+    assert!(
+        src.contains("::NsA::RustBufferBuilderMixin.write_TypeTypeA"),
+        "{src}"
+    );
+    assert!(
+        !src.contains("include ::NsA::RustBufferBuilderMixin"),
+        "{src}"
+    );
+    assert!(
+        !src.contains("include ::NsB::RustBufferBuilderMixin"),
+        "{src}"
+    );
+}
+
+#[test]
+fn generated_local_only_uses_module_functions() {
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace test {};
+        dictionary Foo { string value; };
+        "#,
+        "test",
+    )
+    .unwrap();
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+    assert!(src.contains("def self.write_TypeFoo(builder, v)"), "{src}");
+    assert!(
+        src.contains("::Test::RustBufferBuilderMixin.write_TypeFoo"),
+        "{src}"
+    );
+    assert!(!src.contains("builder.write_TypeFoo"), "{src}");
+    assert!(!src.contains("include RustBufferBuilderMixin"), "{src}");
+}
+
+#[test]
+fn error_reader_is_method_object() {
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace test {
+            [Throws=Boom]
+            u32 go();
+        };
+        [Error]
+        enum Boom { "Oops" };
+        "#,
+        "test",
+    )
+    .unwrap();
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+    assert!(
+        src.contains("rust_call_with_error(::Test::RustBufferStreamMixin.method(:read_TypeBoom)"),
+        "{src}"
+    );
+}
+
+#[test]
+fn templates_have_no_receiver_mixin_calls() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bindings/ruby/templates");
+    for entry in fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|s| s.to_str()) != Some("rb") {
+            continue;
+        }
+        let src = fs::read_to_string(&path).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy();
+        for (i, line) in src.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') {
+                continue;
+            }
+            let loc = format!("{name}:{}", i + 1);
+            if line.contains("self.write_{{") {
+                assert!(
+                    line.contains("def self.write_{{"),
+                    "{loc}: leftover self.write_ {line}"
+                );
+            }
+            if line.contains("self.read_{{") {
+                assert!(
+                    line.contains("def self.read_{{"),
+                    "{loc}: leftover self.read_ {line}"
+                );
+            }
+            assert!(
+                !line.contains("builder.write_{{") && !line.contains("stream.read_{{"),
+                "{loc}: leftover facade {line}"
+            );
+            if line.contains("write_{{") {
+                assert!(
+                    line.contains("def self.write_{{"),
+                    "{loc}: write_{{{{ not a module-function def: {line}"
+                );
+            }
+            if line.contains("read_{{") {
+                assert!(
+                    line.contains("def self.read_{{"),
+                    "{loc}: read_{{{{ not a module-function def: {line}"
+                );
+            }
+        }
+        if name == "RustBufferBuilder.rb" {
+            for (i, line) in src.lines().enumerate() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') || trimmed.starts_with("def pack_into") {
+                    continue;
+                }
+                if trimmed.contains("pack_into") {
+                    assert!(
+                        line.contains("builder.pack_into"),
+                        "RustBufferBuilder.rb:{}: pack_into without builder. receiver: {line}",
+                        i + 1
+                    );
+                }
+            }
+        }
+        if name == "RustBufferStream.rb" {
+            for (i, line) in src.lines().enumerate() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') || trimmed.starts_with("def unpack_from") {
+                    continue;
+                }
+                if trimmed.contains("unpack_from") {
+                    assert!(
+                        line.contains("stream.unpack_from"),
+                        "RustBufferStream.rb:{}: unpack_from without stream. receiver: {line}",
+                        i + 1
+                    );
+                }
+            }
+        }
+    }
 }

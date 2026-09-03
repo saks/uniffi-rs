@@ -1,116 +1,114 @@
-# Mixin containing type-specific write methods.
-# Consuming crates include this module into their own RustBufferBuilder
-# so they can serialize this crate's types directly, using the local
-# crate's buffer infrastructure (pack_into, reserve).
-# This ensures buffer growth always routes through the local crate's
-# RustBuffer allocator.
+# Mixin containing type-specific write methods as module functions.
+# Call sites name this module explicitly (e.g.
+# `::ThisNs::RustBufferBuilderMixin.write_TypeFoo(builder, v)`) so two crates
+# that both define `Foo` do not flatten `write_TypeFoo` onto one receiver.
+# The `builder` argument is always the *local* crate's RustBufferBuilder so
+# pack_into / reserve / write route through that crate's allocator.
 #
-# Dependency mixins are included here (not on the Builder class) so the
-# mixin is closed over nested types from further crates. See
-# RustBufferStreamMixin.
+# Nested types from further crates are reached by lexical calls in this
+# mixin's generated bodies, not by `include`. Do not use `module_function`
+# (it would reintroduce private instance methods).
+# InternalError in these methods is this crate's class.
 module RustBufferBuilderMixin
-  {%- for ext in self.external_mixin_modules()? %}
-  include ::{{ ext.module_name }}::RustBufferBuilderMixin
-  {%- endfor %}
   {% for typ in ci.iter_local_types() -%}
   {%- let canonical_type_name = self::canonical_name(typ) -%}
   {%- match typ -%}
 
   {% when Type::Int8 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i8", -2**7, 2**7)
-    pack_into(1, 'c', v)
+    builder.pack_into(1, 'c', v)
   end
 
   {% when Type::UInt8 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u8", 0, 2**8)
-    pack_into(1, 'c', v)
+    builder.pack_into(1, 'c', v)
   end
 
   {% when Type::Int16 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i16", -2**15, 2**15)
-    pack_into(2, 's>', v)
+    builder.pack_into(2, 's>', v)
   end
 
   {% when Type::UInt16 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u16", 0, 2**16)
-    pack_into(2, 'S>', v)
+    builder.pack_into(2, 'S>', v)
   end
 
   {% when Type::Int32 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i32", -2**31, 2**31)
-    pack_into(4, 'l>', v)
+    builder.pack_into(4, 'l>', v)
   end
 
   {% when Type::UInt32 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u32", 0, 2**32)
-    pack_into(4, 'L>', v)
+    builder.pack_into(4, 'L>', v)
   end
 
   {% when Type::Int64 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i64", -2**63, 2**63)
-    pack_into(8, 'q>', v)
+    builder.pack_into(8, 'q>', v)
   end
 
   {% when Type::UInt64 -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u64", 0, 2**64)
-    pack_into(8, 'Q>', v)
+    builder.pack_into(8, 'Q>', v)
   end
 
   {% when Type::Float32 -%}
 
-  def write_{{ canonical_type_name }}(v)
-    pack_into(4, 'g', v)
+  def self.write_{{ canonical_type_name }}(builder, v)
+    builder.pack_into(4, 'g', v)
   end
 
   {% when Type::Float64 -%}
 
-  def write_{{ canonical_type_name }}(v)
-    pack_into(8, 'G', v)
+  def self.write_{{ canonical_type_name }}(builder, v)
+    builder.pack_into(8, 'G', v)
   end
 
   {% when Type::Boolean -%}
 
-  def write_{{ canonical_type_name }}(v)
-    pack_into(1, 'c', v ? 1 : 0)
+  def self.write_{{ canonical_type_name }}(builder, v)
+    builder.pack_into(1, 'c', v ? 1 : 0)
   end
 
   {% when Type::String -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_utf8(v)
-    pack_into 4, 'l>', v.bytes.size
-    write v
+    builder.pack_into 4, 'l>', v.bytes.size
+    builder.write v
   end
 
   {% when Type::Bytes -%}
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     v = ::{{ ci.namespace()|class_name_rb }}::uniffi_bytes(v)
-    pack_into 4, 'l>', v.bytes.size
-    write v
+    builder.pack_into 4, 'l>', v.bytes.size
+    builder.write v
   end
 
   {% when Type::Timestamp -%}
   # The Timestamp type.
   ONE_SECOND_IN_NANOSECONDS = 10**9
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     seconds = v.tv_sec
     nanoseconds = v.tv_nsec
 
@@ -127,29 +125,29 @@ module RustBufferBuilderMixin
       seconds += 1
     end
 
-    pack_into 8, 'q>', seconds
-    pack_into 4, 'L>', nanoseconds
+    builder.pack_into 8, 'q>', seconds
+    builder.pack_into 4, 'L>', nanoseconds
   end
 
   {% when Type::Duration -%}
   # The Duration type.
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     seconds = v.tv_sec
     nanoseconds = v.tv_nsec
 
     raise ArgumentError, 'Invalid duration, must be non-negative' if seconds < 0
 
-    pack_into 8, 'Q>', seconds
-    pack_into 4, 'L>', nanoseconds
+    builder.pack_into 8, 'Q>', seconds
+    builder.pack_into 4, 'L>', nanoseconds
   end
 
   {% when Type::Object with { name: object_name, .. } -%}
   # The Object type {{ object_name }}.
 
-  def write_{{ canonical_type_name }}(obj)
+  def self.write_{{ canonical_type_name }}(builder, obj)
     handle = {{ object_name|class_name_rb}}.uniffi_lower obj
-    pack_into(8, 'Q>', handle)
+    builder.pack_into(8, 'Q>', handle)
   end
 
   {% when Type::Enum { name: enum_name, .. } -%}
@@ -157,19 +155,19 @@ module RustBufferBuilderMixin
   {%- let e = ci.get_enum_definition(enum_name).unwrap() -%}
   # The Enum type {{ enum_name }}.
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     {%- if e.is_flat() %}
     {%- for variant in e.variants() %}
     if v == {{ enum_name|class_name_rb }}::{{ variant.name()|enum_name_rb }}
-      pack_into(4, 'l>', {{ loop.index }})
+      builder.pack_into(4, 'l>', {{ loop.index }})
     end
     {%- endfor %}
     {%- else -%}
     {%- for variant in e.variants() %}
     if v.{{ variant.name()|var_name_rb }}?
-      pack_into(4, 'l>', {{ loop.index }})
+      builder.pack_into(4, 'l>', {{ loop.index }})
       {%- for field in variant.fields() %}
-        self.write_{{ self::canonical_name(field.as_type().borrow()) }}(v.{% call rb::field_name(field, loop.index) %}{% endcall %})
+        {{ self.rust_buffer_write(field.as_type().borrow())? }}(builder, v.{% call rb::field_name(field, loop.index) %}{% endcall %})
       {%- endfor %}
     end
     {%- endfor %}
@@ -179,23 +177,23 @@ module RustBufferBuilderMixin
   {%- let e = ci.get_enum_definition(enum_name).unwrap() -%}
   # The Error type {{ enum_name }} - write for callback error returns.
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     {%- if e.is_flat() %}
     {%- for variant in e.variants() %}
     if v.is_a?({{ enum_name|class_name_rb }}::{{ variant.name()|class_name_rb }})
-      pack_into 4, 'l>', {{ loop.index }}
+      builder.pack_into 4, 'l>', {{ loop.index }}
       return
     end
     {%- endfor %}
     {%- else -%}
     {%- for variant in e.variants() %}
     if v.is_a?({{ enum_name|class_name_rb }}::{{ variant.name()|class_name_rb }})
-      pack_into 4, 'l>', {{ loop.index }}
+      builder.pack_into 4, 'l>', {{ loop.index }}
       {%- for field in variant.fields() %}
         {%- if field.name().is_empty() %}
-        self.write_{{ self::canonical_name(field.as_type().borrow()) }}(v[{{ loop.index0 }}])
+        {{ self.rust_buffer_write(field.as_type().borrow())? }}(builder, v[{{ loop.index0 }}])
         {%- else %}
-        self.write_{{ self::canonical_name(field.as_type().borrow()) }}(v.{{ field.name()|var_name_rb }})
+        {{ self.rust_buffer_write(field.as_type().borrow())? }}(builder, v.{{ field.name()|var_name_rb }})
         {%- endif %}
       {%- endfor %}
       return
@@ -209,55 +207,55 @@ module RustBufferBuilderMixin
   {%- let rec = ci.get_record_definition(record_name).unwrap() -%}
   # The Record type {{ record_name }}.
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     {%- for field in rec.fields() %}
-    self.write_{{ self::canonical_name(field.as_type().borrow()) }}(v.{{ field.name()|var_name_rb }})
+    {{ self.rust_buffer_write(field.as_type().borrow())? }}(builder, v.{{ field.name()|var_name_rb }})
     {%- endfor %}
   end
 
   {% when Type::Optional { inner_type } -%}
   # The Optional<T> type for {{ self::canonical_name(inner_type) }}.
 
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     if v.nil?
-      pack_into(1, 'c', 0)
+      builder.pack_into(1, 'c', 0)
     else
-      pack_into(1, 'c', 1)
-      self.write_{{ self::canonical_name(inner_type) }}(v)
+      builder.pack_into(1, 'c', 1)
+      {{ self.rust_buffer_write(inner_type)? }}(builder, v)
     end
   end
 
   {% when Type::Sequence { inner_type } -%}
   # The Sequence<T> type for {{ self::canonical_name(inner_type) }}.
 
-  def write_{{ canonical_type_name }}(items)
-    pack_into(4, 'l>', items.size)
+  def self.write_{{ canonical_type_name }}(builder, items)
+    builder.pack_into(4, 'l>', items.size)
 
     items.each do |item|
-      self.write_{{ self::canonical_name(inner_type) }}(item)
+      {{ self.rust_buffer_write(inner_type)? }}(builder, item)
     end
   end
 
   {% when Type::Set { inner_type } -%}
   # The Set<T> type for {{ self::canonical_name(inner_type) }}.
 
-  def write_{{ canonical_type_name }}(items)
-    pack_into(4, 'l>', items.size)
+  def self.write_{{ canonical_type_name }}(builder, items)
+    builder.pack_into(4, 'l>', items.size)
 
     items.each do |item|
-      self.write_{{ self::canonical_name(inner_type) }}(item)
+      {{ self.rust_buffer_write(inner_type)? }}(builder, item)
     end
   end
 
   {% when Type::Map { key_type: k, value_type: v } -%}
   # The Map<T> type for {{ canonical_type_name }}.
 
-  def write_{{ canonical_type_name }}(items)
-    pack_into(4, 'l>', items.size)
+  def self.write_{{ canonical_type_name }}(builder, items)
+    builder.pack_into(4, 'l>', items.size)
 
     items.each do |k, v|
-      self.write_{{ self::canonical_name(k) }}(k)
-      self.write_{{ self::canonical_name(v) }}(v)
+      {{ self.rust_buffer_write(k)? }}(builder, k)
+      {{ self.rust_buffer_write(v)? }}(builder, v)
     end
   end
 
@@ -265,32 +263,32 @@ module RustBufferBuilderMixin
   {%- match config.custom_types.get(name.as_str()) %}
   {%- when Some(cfg) %}{%- if cfg.has_conversion() %}
   # Custom type {{ name }}: applies lower, then writes builtin `{{ self::canonical_name(builtin) }}`
-  def write_{{ canonical_type_name }}(v)
-    write_{{ self::canonical_name(builtin) }}({{ cfg.lower("v") }})
+  def self.write_{{ canonical_type_name }}(builder, v)
+    {{ self.rust_buffer_write(builtin)? }}(builder, {{ cfg.lower("v") }})
   end
   {%- else %}
   # The Custom type {{ name }} delegates serialization to its builtin type.
-  def write_{{ canonical_type_name }}(v)
-    write_{{ self::canonical_name(builtin) }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
+    {{ self.rust_buffer_write(builtin)? }}(builder, v)
   end
   {%- endif %}
   {%- when None %}
   # The Custom type {{ name }} delegates serialization to its builtin type.
-  def write_{{ canonical_type_name }}(v)
-    write_{{ self::canonical_name(builtin) }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
+    {{ self.rust_buffer_write(builtin)? }}(builder, v)
   end
   {%- endmatch %}
 
   {% when Type::CallbackInterface { name, .. } -%}
   # The CallbackInterface type {{ name }}: write a uint64 handle.
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     handle = {{ self::canonical_name(typ) }}FfiConverter.lower(v)
-    pack_into 8, 'Q>', handle
+    builder.pack_into 8, 'Q>', handle
   end
 
   {%- else -%}
   # This type is not yet supported in the Ruby backend.
-  def write_{{ canonical_type_name }}(v)
+  def self.write_{{ canonical_type_name }}(builder, v)
     raise InternalError('RustBufferStream.write() not implemented yet for {{ canonical_type_name }}')
   end
 
@@ -300,8 +298,6 @@ end
 
 # Helper for structured writing of values into a RustBuffer.
 class RustBufferBuilder
-  include RustBufferBuilderMixin
-
   def initialize
     @rust_buf = RustBuffer.alloc 16
     @rust_buf.len = 0
@@ -328,6 +324,15 @@ class RustBufferBuilder
     end
   end
 
+  # Public so RustBufferBuilderMixin module functions can pack without
+  # `include` flattening instance methods onto this class.
+  # The class itself is private_constant. `reserve` stays private.
+  def pack_into(size, format, value)
+    reserve(size) do
+      @rust_buf.data.put_array_of_char @rust_buf.len, [value].pack(format).bytes
+    end
+  end
+
   private
 
   def reserve(num_bytes)
@@ -338,12 +343,6 @@ class RustBufferBuilder
     yield
 
     @rust_buf.len += num_bytes
-  end
-
-  def pack_into(size, format, value)
-    reserve(size) do
-      @rust_buf.data.put_array_of_char @rust_buf.len, [value].pack(format).bytes
-    end
   end
 end
 

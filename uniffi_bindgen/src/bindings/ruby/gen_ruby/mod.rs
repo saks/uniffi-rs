@@ -19,10 +19,11 @@ const RESERVED_WORDS: &[&str] = &[
     "until", "when", "while", "yield", "__FILE__", "__LINE__",
 ];
 
-// Info for an external crate's mixin modules, used in templates.
+// Info for an external crate, used by `wrapper.rb` to emit `require`.
+// Ruby module names for mixin *calls* are computed by `mixin_owner_module`,
+// not stored here.
 #[derive(Debug)]
 pub struct ExternalMixin {
-    pub module_name: String,
     pub require_path: String,
 }
 
@@ -226,18 +227,70 @@ impl<'a> RubyWrapper<'a> {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
     }
 
-    /// Reader symbol for a function's error type (`:read_TypeFoo`), or `None`.
-    /// Unwraps Custom types to find the inner Enum/Object, then uses `canonical_name`.
-    pub fn error_reader_symbol(&self, func: &impl Callable) -> Option<String> {
+    /// Ruby module that owns mixin read/write for `type_`.
+    ///
+    /// Named types defined in another crate → that crate's namespace module
+    /// (`external_type_module`). Everything else (primitives, Timestamp,
+    /// Duration, Optional/Sequence/Map/Set, local named types) → this crate.
+    /// `Type::Box` recurses. Always rooted at `::` so lookup cannot bind a
+    /// nested constant of the same name (same rule as `custom_owner_module`).
+    ///
+    /// Do **not** reuse [`Self::ffi_module_prefix`]: that helper is `None` for
+    /// records/enums so lift/lower go through the *local* `RustBuffer.alloc_from_*`.
+    /// Mixin read/write is the opposite: bytes interpretation lives in the
+    /// defining crate, while alloc stays local.
+    fn mixin_owner_module(&self, type_: &Type) -> String {
+        let module = match type_ {
+            Type::Box { inner_type } => return self.mixin_owner_module(inner_type),
+            Type::Record { module_path, .. }
+            | Type::Enum { module_path, .. }
+            | Type::Object { module_path, .. }
+            | Type::Custom { module_path, .. }
+            | Type::CallbackInterface { module_path, .. }
+                if self.is_external_module(module_path) =>
+            {
+                self.external_type_module(module_path)
+            }
+            _ => class_name_rb_inner(self.ci.namespace()),
+        };
+        format!("::{module}")
+    }
+
+    /// Callee only, e.g. `::NsA::RustBufferBuilderMixin.write_TypeFoo`.
+    pub fn rust_buffer_write(&self, type_: &Type) -> Result<String, askama::Error> {
+        Ok(format!(
+            "{}::RustBufferBuilderMixin.write_{}",
+            self.mixin_owner_module(type_),
+            canonical_name(type_),
+        ))
+    }
+
+    /// Callee only, e.g. `::NsA::RustBufferStreamMixin.read_TypeFoo`.
+    pub fn rust_buffer_read(&self, type_: &Type) -> Result<String, askama::Error> {
+        Ok(format!(
+            "{}::RustBufferStreamMixin.read_{}",
+            self.mixin_owner_module(type_),
+            canonical_name(type_),
+        ))
+    }
+
+    /// `Method` object for a function's error reader, or `None`.
+    ///
+    /// Unwraps Custom types to find the inner Enum/Object. Named
+    /// `error_reader_method_expr` so it does not collide with the Askama macro
+    /// `error_reader_expr` in `macros.rb`.
+    pub fn error_reader_method_expr(&self, func: &impl Callable) -> Option<String> {
         let error_type = match func.throws_type() {
             Some(Type::Custom { builtin, .. }) => builtin.as_ref(),
             Some(type_) => type_,
             None => return None,
         };
         match error_type {
-            Type::Enum { .. } | Type::Object { .. } => {
-                Some(format!(":read_{}", canonical_name(error_type)))
-            }
+            Type::Enum { .. } | Type::Object { .. } => Some(format!(
+                "{}::RustBufferStreamMixin.method(:read_{})",
+                self.mixin_owner_module(error_type),
+                canonical_name(error_type),
+            )),
             _ => None,
         }
     }
@@ -247,13 +300,14 @@ impl<'a> RubyWrapper<'a> {
     /// Uniqueness is per crate, not per Ruby module name: `require` paths are the
     /// UniFFI namespace / `.rb` filename, which is crate-identity. Two types from
     /// the same crate collapse to one entry. Two crates that would emit the same
-    /// Ruby module name are an error — this list also drives `include ::Mod::Mixin`,
-    /// and a collision would either drop a `require` or merge unrelated modules.
+    /// Ruby module name are an error — `require` paths and `::Mod::RustBuffer*Mixin`
+    /// call sites still need a unique Ruby module per crate.
     ///
-    /// Transitive crates are not listed here: each crate's mixin includes its own
-    /// direct dependency mixins, so a consumer of B::Rec that contains C::Thing
-    /// picks up C via B's mixin ancestor chain. Nested C types are absent from
-    /// `iter_external_types()`.
+    /// Transitive crates are not listed here. Call sites use `rust_buffer_read` /
+    /// `rust_buffer_write`, which name `::Dep::RustBuffer*Mixin` using
+    /// `external_type_module`. Nested C types are absent from `iter_external_types()`;
+    /// the intermediate crate's generated mixin body calls C lexically, and that
+    /// crate's `wrapper.rb` already `require`s C.
     pub fn external_mixin_modules(&self) -> Result<Vec<ExternalMixin>, askama::Error> {
         let mut seen_crates = BTreeSet::new();
         let mut module_to_crate = HashMap::new();
@@ -297,12 +351,9 @@ impl<'a> RubyWrapper<'a> {
                     .into(),
                 ));
             }
-            module_to_crate.insert(module_name.clone(), crate_name);
+            module_to_crate.insert(module_name, crate_name);
 
-            result.push(ExternalMixin {
-                module_name,
-                require_path,
-            });
+            result.push(ExternalMixin { require_path });
         }
 
         Ok(result)

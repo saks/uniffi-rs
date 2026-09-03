@@ -85,42 +85,42 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(value)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(value)
+      {{ self.rust_buffer_write(typ)? }}(builder, value)
       return builder.finalize
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
   {% when Type::Timestamp -%}
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
   {% when Type::Duration -%}
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -136,14 +136,14 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -170,14 +170,14 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -192,14 +192,14 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize()
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -214,14 +214,14 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize()
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -236,14 +236,14 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize()
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -259,14 +259,14 @@ class RustBuffer < FFI::Struct
 
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize
     end
   end
 
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 
@@ -283,7 +283,7 @@ class RustBuffer < FFI::Struct
   # bridge that routes reserve through this shared library's allocator.
   def self.alloc_from_{{ canonical_type_name }}(v)
     RustBuffer.allocWithBuilder do |builder|
-      builder.write_{{ canonical_type_name }}(v)
+      {{ self.rust_buffer_write(typ)? }}(builder, v)
       return builder.finalize()
     end
   end
@@ -291,7 +291,7 @@ class RustBuffer < FFI::Struct
   # External type bridge: frees locally, delegates read to external stream.
   def consume_into_{{ canonical_type_name }}
     consumeWithStream do |stream|
-      return stream.read_{{ canonical_type_name }}
+      return {{ self.rust_buffer_read(typ)? }}(stream)
     end
   end
 

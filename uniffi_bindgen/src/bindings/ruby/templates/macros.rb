@@ -18,10 +18,10 @@ values[{{- field_num - 1 -}}]
 {%- endmacro -%}
 
 {#- Helper: emit the opening of a rust_call or rust_call_with_error call.
-    The reader method symbol is computed by the Rust backend — see error_reader_symbol.
+    The reader is a Method object from error_reader_method_expr.
 -#}
 {%- macro rust_call_head(func) -%}
-    {%- match self.error_reader_symbol(func) %}
+    {%- match self.error_reader_method_expr(func) %}
     {%- when Some with (reader) %}
     ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ reader }},
     {%- when None %}
@@ -29,9 +29,9 @@ values[{{- field_num - 1 -}}]
     {%- endmatch -%}
 {%- endmacro -%}
 
-{#- Emit the error-reader argument for async FFI calls: `:read_TypeFoo` or Ruby `nil`. -#}
+{#- Emit the error-reader argument for async FFI calls: Method object or Ruby `nil`. -#}
 {%- macro error_reader_expr(func) -%}
-    {%- match self.error_reader_symbol(func) %}
+    {%- match self.error_reader_method_expr(func) %}
     {%- when Some with (reader) %}{{ reader }}
     {%- when None %}nil
     {%- endmatch %}

@@ -15,12 +15,16 @@ class TestTransitiveExternalTypes < Test::Unit::TestCase
   end
 
   # SubLibType lives in crate B; its fields are UniffiOne* types from crate C.
-  # This crate's API never mentions a C type, so C's mixin must arrive via B.
-  def test_mixin_ancestors_include_transitive_crate
-    ancestors = ImportedTypesTransitive::RustBufferStreamMixin.ancestors.map(&:to_s)
+  # Nested (de)serialize is a lexical call in B's mixin, not ancestor lookup.
+  def test_sublib_mixin_calls_uniffi_one_lexically
+    path = $LOADED_FEATURES.find { |f| File.basename(f) == 'imported_types_sublib.rb' }
+    assert_not_nil path, 'imported_types_sublib.rb should be loaded'
+    src = File.read(path)
 
-    assert_include ancestors, 'ImportedTypesSublib::RustBufferStreamMixin'
-    assert_include ancestors, 'UniffiOneNs::RustBufferStreamMixin'
+    assert_match(/UniffiOneNs::RustBufferStreamMixin/, src)
+    assert_match(/UniffiOneNs::RustBufferBuilderMixin/, src)
+    assert_match(/write_TypeUniffiOneEnum/, src)
+    assert_match(/read_TypeUniffiOneEnum/, src)
   end
 
   # external_packages auto-fill still maps uniffi-one for module-name lookup;
