@@ -1,6 +1,9 @@
-use super::{crate_name_from_module_path, is_reserved_word, Config, RubyWrapper};
+use super::{
+    canonical_name, class_name_rb_inner, crate_name_from_module_path, filters, is_reserved_word,
+    Config, RubyWrapper,
+};
 use crate::bindings::ruby::generate_ruby_bindings;
-use crate::interface::{ComponentInterface, Type};
+use crate::interface::{ComponentInterface, ObjectImpl, Type};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -666,4 +669,77 @@ fn templates_have_no_receiver_mixin_calls() {
             }
         }
     }
+}
+
+#[test]
+fn qualify_roots_external_module() {
+    assert_eq!(filters::qualify("Foo", Some("Mod")), "::Mod::Foo");
+    assert_eq!(filters::qualify("", Some("Mod")), "::Mod::");
+    assert_eq!(filters::qualify("Foo", None), "Foo");
+}
+
+#[test]
+fn canonical_names() {
+    assert_eq!(canonical_name(&Type::UInt8), "u8");
+    assert_eq!(canonical_name(&Type::String), "string");
+    assert_eq!(canonical_name(&Type::Bytes), "bytes");
+    assert_eq!(
+        canonical_name(&Type::Optional {
+            inner_type: Box::new(Type::Sequence {
+                inner_type: Box::new(Type::Object {
+                    module_path: "anything".to_string(),
+                    name: "Example".into(),
+                    imp: ObjectImpl::Struct,
+                })
+            })
+        }),
+        "OptionalSequenceTypeExample"
+    );
+
+    let map = Type::Map {
+        key_type: Box::new(Type::UInt32),
+        value_type: Box::new(Type::UInt32),
+    };
+    assert_eq!(canonical_name(&map), "MapU32U32");
+    assert_eq!(
+        canonical_name(&Type::Enum {
+            module_path: "foo".to_string(),
+            name: "HTMLError".to_string()
+        }),
+        "TypeHTMLError"
+    );
+}
+
+#[test]
+fn class_name() {
+    assert_eq!(class_name_rb_inner("Example"), "Example");
+}
+
+#[test]
+fn enum_lift_consume_into_matches_method_name() {
+    // heck would turn TypeHTMLError into TypeHtmlError; the generated
+    // consume_into_* method uses canonical_name, so the lift call site must too.
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace test {
+            HTMLError id();
+        };
+        enum HTMLError { "InvalidHTML" };
+        "#,
+        "test",
+    )
+    .unwrap();
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+    assert!(
+        src.contains("def consume_into_TypeHTMLError"),
+        "method def:\n{src}"
+    );
+    assert!(
+        src.contains("result.consume_into_TypeHTMLError"),
+        "lift call site must match the method, not heck(canonical_name):\n{src}"
+    );
+    assert!(
+        !src.contains("consume_into_TypeHtmlError"),
+        "heck-rewritten consume_into must not appear:\n{src}"
+    );
 }

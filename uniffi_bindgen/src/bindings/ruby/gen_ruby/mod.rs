@@ -53,15 +53,31 @@ fn crate_name_from_module_path(module_path: &str) -> String {
         .replace('-', "_")
 }
 
-/// Get the canonical, unique-within-this-component name for a type.
+fn peel_boxes(type_: &Type) -> &Type {
+    match type_ {
+        Type::Box { inner_type } => peel_boxes(inner_type),
+        other => other,
+    }
+}
+
+fn peel_boxes_and_custom(type_: &Type) -> &Type {
+    match peel_boxes(type_) {
+        Type::Custom { builtin, .. } => peel_boxes_and_custom(builtin),
+        other => other,
+    }
+}
+
+fn askama_err(err: impl Into<anyhow::Error>) -> askama::Error {
+    askama::Error::Custom(err.into().into())
+}
+
+/// Unique-within-this-component name used in generated helper identifiers
+/// (`write_TypeFoo`, `alloc_from_string`, …).
 ///
-/// When generating helper code for foreign language bindings, it's sometimes useful to be
-/// able to name a particular type in order to e.g. call a helper function that is specific
-/// to that type. We support this by defining a naming convention where each type gets a
-/// unique canonical name, constructed recursively from the names of its component types (if any).
+/// Named types share the `Type` prefix so a record named `SequenceRecord` cannot
+/// collide with `sequence<Record>`. Callbacks keep a distinct prefix.
 pub fn canonical_name(t: &Type) -> String {
     match t {
-        // Builtin primitive types, with plain old names.
         Type::Int8 => "i8".into(),
         Type::UInt8 => "u8".into(),
         Type::Int16 => "i16".into(),
@@ -75,23 +91,13 @@ pub fn canonical_name(t: &Type) -> String {
         Type::String => "string".into(),
         Type::Bytes => "bytes".into(),
         Type::Boolean => "bool".into(),
-        // API defined types.
-        // Note that these all get unique names, and the parser ensures that the names do not
-        // conflict with a builtin type. We add a prefix to the name to guard against pathological
-        // cases like a record named `SequenceRecord` interfering with `sequence<Record>`.
-        // However, types that support importing all end up with the same prefix of "Type", so
-        // that the import handling code knows how to find the remote reference.
-        Type::Object { name, .. } => format!("Type{name}"),
-        Type::Enum { name, .. } => format!("Type{name}"),
-        Type::Record { name, .. } => format!("Type{name}"),
-        Type::CallbackInterface { name, .. } => format!("CallbackInterface{name}"),
         Type::Timestamp => "Timestamp".into(),
         Type::Duration => "Duration".into(),
-        // Recursive types.
-        // These add a prefix to the name of the underlying type.
-        // The component API definition cannot give names to recursive types, so as long as the
-        // prefixes we add here are all unique amongst themselves, then we have no chance of
-        // acccidentally generating name collisions.
+        Type::Object { name, .. }
+        | Type::Enum { name, .. }
+        | Type::Record { name, .. }
+        | Type::Custom { name, .. } => format!("Type{name}"),
+        Type::CallbackInterface { name, .. } => format!("CallbackInterface{name}"),
         Type::Optional { inner_type } => format!("Optional{}", canonical_name(inner_type)),
         Type::Sequence { inner_type } => format!("Sequence{}", canonical_name(inner_type)),
         Type::Set { inner_type } => format!("Set{}", canonical_name(inner_type)),
@@ -103,7 +109,6 @@ pub fn canonical_name(t: &Type) -> String {
             canonical_name(key_type).to_upper_camel_case(),
             canonical_name(value_type).to_upper_camel_case()
         ),
-        Type::Custom { name, .. } => format!("Type{name}"),
         Type::Box { inner_type } => canonical_name(inner_type),
     }
 }
@@ -120,24 +125,24 @@ pub struct CustomTypeConfig {
 }
 
 impl CustomTypeConfig {
+    fn conversion<'a>(&'a self, primary: &'a str, fallback: &'a str) -> &'a str {
+        if primary.is_empty() {
+            fallback
+        } else {
+            primary
+        }
+    }
+
     /// Produce a Ruby expression that lifts a raw-builtin value `nm` into the custom type.
     fn lift(&self, name: &str) -> String {
-        let converter = if self.lift.is_empty() {
-            &self.into_custom
-        } else {
-            &self.lift
-        };
-        converter.replace("{}", name)
+        self.conversion(&self.lift, &self.into_custom)
+            .replace("{}", name)
     }
 
     /// Produce a Ruby expression that lowers a value `nm` to its raw builtin.
     fn lower(&self, name: &str) -> String {
-        let converter = if self.lower.is_empty() {
-            &self.from_custom
-        } else {
-            &self.lower
-        };
-        converter.replace("{}", name)
+        self.conversion(&self.lower, &self.from_custom)
+            .replace("{}", name)
     }
 
     /// True if this config actually specifies conversion expressions.
@@ -170,9 +175,7 @@ pub struct Config {
 
 impl Config {
     pub fn cdylib_name(&self) -> String {
-        self.cdylib_name
-            .clone()
-            .unwrap_or_else(|| "uniffi".to_string())
+        self.cdylib_name.as_deref().unwrap_or("uniffi").to_owned()
     }
 
     pub fn custom_cdylib_path(&self) -> bool {
@@ -250,73 +253,70 @@ pub struct RubyWrapper<'a> {
     config: Config,
     ci: &'a ComponentInterface,
 }
+
+/// Owner-module policies (not interchangeable):
+///
+/// - mixin read/write: defining crate for named types, else this crate
+/// - object/callback lift/lower (`ffi_module_prefix`): defining crate, else local
+/// - record/enum/object class names in defaults (`type_class_module`)
+/// - custom `uniffi_{lift,lower}_*` (`custom_owner_module`)
+///
+/// `ffi_module_prefix` is `None` for records/enums so alloc stays on this crate's
+/// `RustBuffer`. Mixin calls are the opposite: bytes interpretation lives in the
+/// defining crate.
 impl<'a> RubyWrapper<'a> {
     pub fn new(config: Config, ci: &'a ComponentInterface) -> Self {
         Self { config, ci }
     }
 
-    /// Ruby `module` name emitted for this crate (config or UpperCamelCase(namespace)).
     pub fn module_name(&self) -> String {
         self.config.module_name(self.ci.namespace())
     }
 
-    /// Resolve the Ruby module name for an external type's crate.
-    /// Uses config.external_packages if configured, otherwise falls back to the namespace name.
     pub fn external_type_module(&self, module_path: &str) -> String {
         let namespace = self.ci.namespace_for_module_path(module_path).ok();
         self.config.external_package_name(module_path, namespace)
     }
 
-    /// Returns true if the module_path comes from a different crate.
     pub fn is_external_module(&self, module_path: &str) -> bool {
         crate_name_from_module_path(module_path) != self.ci.crate_name()
     }
 
-    /// Ruby module that owns mixin read/write for `type_`.
-    ///
-    /// Named types defined in another crate → that crate's Ruby module
-    /// (`external_type_module`). Everything else (primitives, Timestamp,
-    /// Duration, Optional/Sequence/Map/Set, local named types) → this crate.
-    /// `Type::Box` recurses. Always rooted at `::` so lookup cannot bind a
-    /// nested constant of the same name (same rule as `custom_owner_module`).
-    ///
-    /// Do **not** reuse [`Self::ffi_module_prefix`]: that helper is `None` for
-    /// records/enums so lift/lower go through the *local* `RustBuffer.alloc_from_*`.
-    /// Mixin read/write is the opposite: bytes interpretation lives in the
-    /// defining crate, while alloc stays local.
+    fn this_module_rooted(&self) -> String {
+        format!("::{}", self.module_name())
+    }
+
+    fn owner_module_for_path(&self, module_path: &str) -> String {
+        if self.is_external_module(module_path) {
+            format!("::{}", self.external_type_module(module_path))
+        } else {
+            self.this_module_rooted()
+        }
+    }
+
     fn mixin_owner_module(&self, type_: &Type) -> String {
-        let module = match type_ {
-            Type::Box { inner_type } => return self.mixin_owner_module(inner_type),
-            Type::Record { module_path, .. }
-            | Type::Enum { module_path, .. }
-            | Type::Object { module_path, .. }
-            | Type::Custom { module_path, .. }
-            | Type::CallbackInterface { module_path, .. }
-                if self.is_external_module(module_path) =>
-            {
-                self.external_type_module(module_path)
-            }
-            _ => self.module_name(),
-        };
-        format!("::{module}")
+        match peel_boxes(type_).module_path() {
+            Some(mp) => self.owner_module_for_path(mp),
+            None => self.this_module_rooted(),
+        }
+    }
+
+    fn rust_buffer_op(&self, type_: &Type, mixin: &str, op: &str) -> String {
+        format!(
+            "{}::{mixin}.{op}_{}",
+            self.mixin_owner_module(type_),
+            canonical_name(type_),
+        )
     }
 
     /// Callee only, e.g. `::NsA::RustBufferBuilderMixin.write_TypeFoo`.
     pub fn rust_buffer_write(&self, type_: &Type) -> Result<String, askama::Error> {
-        Ok(format!(
-            "{}::RustBufferBuilderMixin.write_{}",
-            self.mixin_owner_module(type_),
-            canonical_name(type_),
-        ))
+        Ok(self.rust_buffer_op(type_, "RustBufferBuilderMixin", "write"))
     }
 
     /// Callee only, e.g. `::NsA::RustBufferStreamMixin.read_TypeFoo`.
     pub fn rust_buffer_read(&self, type_: &Type) -> Result<String, askama::Error> {
-        Ok(format!(
-            "{}::RustBufferStreamMixin.read_{}",
-            self.mixin_owner_module(type_),
-            canonical_name(type_),
-        ))
+        Ok(self.rust_buffer_op(type_, "RustBufferStreamMixin", "read"))
     }
 
     /// `Method` object for a function's error reader, or `None`.
@@ -340,19 +340,11 @@ impl<'a> RubyWrapper<'a> {
         }
     }
 
-    /// Returns mixins for each *direct* external crate (module name + require path).
+    /// Direct external crates to `require`, unique by crate.
     ///
-    /// Uniqueness is per crate, not per Ruby module name: `require` paths are the
-    /// UniFFI namespace / `.rb` filename, which is crate-identity. Two types from
-    /// the same crate collapse to one entry. Two crates that would emit the same
-    /// Ruby module name are an error — `require` paths and `::Mod::RustBuffer*Mixin`
-    /// call sites still need a unique Ruby module per crate.
-    ///
-    /// Transitive crates are not listed here. Call sites use `rust_buffer_read` /
-    /// `rust_buffer_write`, which name `::Dep::RustBuffer*Mixin` using
-    /// `external_type_module`. Nested C types are absent from `iter_external_types()`;
-    /// the intermediate crate's generated mixin body calls C lexically, and that
-    /// crate's `wrapper.rb` already `require`s C.
+    /// Transitive crates are not listed: nested C types are absent from
+    /// `iter_external_types()`, and the intermediate crate's mixin body names C
+    /// lexically (its `wrapper.rb` already `require`s C).
     pub fn external_mixin_modules(&self) -> Result<Vec<ExternalMixin>, askama::Error> {
         let mut seen_crates = BTreeSet::new();
         let mut module_to_crate = HashMap::new();
@@ -368,33 +360,24 @@ impl<'a> RubyWrapper<'a> {
             }
 
             // Single-UDL generation has no crate→namespace map for dependencies.
-            // Falling back to the crate name produces the wrong `require` path
-            // whenever the external crate's UniFFI namespace differs from its
-            // crate name (e.g. crate `uniffi_one`, namespace `uniffi_one_ns`).
             let require_path = match self.ci.namespace_for_module_path(module_path) {
                 Ok(ns) => ns.to_owned(),
                 Err(_) => {
-                    return Err(askama::Error::Custom(
-                        anyhow!(
-                            "Cannot resolve namespace for external crate `{crate_name}`. \
-                             Single-UDL generation is not supported for external types; generate from a \
-                             compiled library (e.g. `uniffi-bindgen generate path/to/libfoo.dylib --language ruby`) \
-                             so UniFFI can load scaffolding metadata for all crates."
-                        )
-                        .into(),
-                    ));
+                    return Err(askama_err(anyhow!(
+                        "Cannot resolve namespace for external crate `{crate_name}`. \
+                         Single-UDL generation is not supported for external types; generate from a \
+                         compiled library (e.g. `uniffi-bindgen generate path/to/libfoo.dylib --language ruby`) \
+                         so UniFFI can load scaffolding metadata for all crates."
+                    )));
                 }
             };
 
             let module_name = self.external_type_module(module_path);
             if let Some(existing) = module_to_crate.get(&module_name) {
-                return Err(askama::Error::Custom(
-                    anyhow!(
-                        "Ruby module `{module_name}` is used by both crate `{existing}` and crate `{crate_name}`; \
-                         each crate must have a unique Ruby module name"
-                    )
-                    .into(),
-                ));
+                return Err(askama_err(anyhow!(
+                    "Ruby module `{module_name}` is used by both crate `{existing}` and crate `{crate_name}`; \
+                     each crate must have a unique Ruby module name"
+                )));
             }
             module_to_crate.insert(module_name, crate_name);
 
@@ -404,40 +387,29 @@ impl<'a> RubyWrapper<'a> {
         Ok(result)
     }
 
-    /// Returns deduplicated require paths declared by external custom type configs.
-    ///
-    /// This keeps wrapper.rb simple by doing all type/config matching in Rust.
+    /// Deduplicated require paths declared by external custom type configs.
     pub fn external_custom_type_imports(&self) -> Vec<String> {
         let mut imports = BTreeSet::new();
-
         for typ in self.ci.iter_external_types() {
-            if let Type::Custom { name, .. } = typ {
-                if let Some(cfg) = self.config.custom_types.get(name) {
-                    if let Some(ref extra_imports) = cfg.imports {
-                        for import_name in extra_imports {
-                            imports.insert(import_name.to_string());
-                        }
-                    }
-                }
+            let Type::Custom { name, .. } = typ else {
+                continue;
+            };
+            if let Some(extra) = self
+                .config
+                .custom_types
+                .get(name)
+                .and_then(|cfg| cfg.imports.as_ref())
+            {
+                imports.extend(extra.iter().cloned());
             }
         }
-
         imports.into_iter().collect()
     }
 
-    /// Module prefix for lift/lower/check_lower of an external type, if any.
-    ///
-    /// Only Object and CallbackInterface need a foreign-module prefix (handle /
-    /// converter lookup). RustBuffer-backed external types must go through the
-    /// *local* `RustBuffer` / `RustBufferBuilder` bridges so alloc/reserve/free
-    /// stay on this crate's cdylib, see the comments on those bridges.
+    /// Prefix for object/callback handle lift/lower. `None` for RustBuffer-backed
+    /// types so alloc/reserve/free stay on this crate's cdylib.
     fn ffi_module_prefix(&self, type_: &Type) -> Option<String> {
-        match type_ {
-            Type::Box { inner_type } => self.ffi_module_prefix(inner_type),
-            // Recurse so a Custom wrapping an external Object/CallbackInterface
-            // still prefixes `InnerObject.uniffi_lift` / `CallbackInterfaceXFfiConverter`
-            // with the defining crate. Passing `None` here NameErrors in the consumer.
-            Type::Custom { builtin, .. } => self.ffi_module_prefix(builtin),
+        match peel_boxes_and_custom(type_) {
             Type::Object { module_path, .. } | Type::CallbackInterface { module_path, .. }
                 if self.is_external_module(module_path) =>
             {
@@ -447,44 +419,15 @@ impl<'a> RubyWrapper<'a> {
         }
     }
 
-    /// Defining crate module and builtin for an imported custom type.
-    ///
-    /// Used by `coerce_rb` to skip consumer-side builtin coercion. Identity
-    /// imported newtypes coerce inside the defining crate's `uniffi_lower_*`.
-    /// Lift/lower/check_lower walk every `Type::Custom` node and call that
-    /// crate's `uniffi_{lift,lower,check_lower}_*` — including when the
-    /// custom type is the builtin of another custom type (`LocalUrl` wrapping `Url`).
-    fn external_custom<'b>(&self, type_: &'b Type) -> Option<(String, &'b Type)> {
-        match type_ {
-            Type::Box { inner_type } => self.external_custom(inner_type),
-            Type::Custom {
-                module_path,
-                builtin,
-                ..
-            } if self.is_external_module(module_path) => {
-                Some((self.external_type_module(module_path), builtin.as_ref()))
-            }
-            _ => None,
-        }
-    }
-
     pub(crate) fn is_external_custom(&self, type_: &Type) -> bool {
-        self.external_custom(type_).is_some()
+        matches!(
+            peel_boxes(type_),
+            Type::Custom { module_path, .. } if self.is_external_module(module_path)
+        )
     }
 
-    /// Ruby module that owns `uniffi_lift_*` / `uniffi_lower_*` for a custom type.
-    ///
-    /// External types use the defining crate's module; local types use this
-    /// crate's `module_name` so the call is valid from instance methods as well
-    /// as `def self.` functions. Always rooted at `::` so lookup does not bind
-    /// a nested constant of the same name inside the consumer module.
     pub(crate) fn custom_owner_module(&self, module_path: &str) -> String {
-        let module = if self.is_external_module(module_path) {
-            self.external_type_module(module_path)
-        } else {
-            self.module_name()
-        };
-        format!("::{module}")
+        self.owner_module_for_path(module_path)
     }
 
     pub fn lift_rb(&self, nm: &str, type_: &Type) -> Result<String, askama::Error> {
@@ -508,35 +451,35 @@ impl<'a> RubyWrapper<'a> {
 
     pub fn coerce_rb(&self, nm: impl AsRef<str>, type_: &Type) -> Result<String, askama::Error> {
         let ns = self.module_name();
-        filters::coerce_rb_inner(nm, ns, type_, &self.config.custom_types, self)
+        filters::coerce_rb_inner(nm, ns, type_, self)
     }
 
     pub fn field_default_rb(&self, field: &Field) -> Result<String, askama::Error> {
-        match field.default_value() {
-            Some(default) => filters::default_rb_inner(default, &field.as_type(), self),
-            None => Err(askama::Error::Custom(
-                anyhow::anyhow!("field_default_rb called on field with no default value").into(),
-            )),
-        }
+        self.default_rb(field.default_value(), &field.as_type(), "field")
     }
 
     pub fn arg_default_rb(&self, arg: &Argument) -> Result<String, askama::Error> {
-        match arg.default_value() {
-            Some(default) => filters::default_rb_inner(default, &arg.as_type(), self),
-            None => Err(askama::Error::Custom(
-                anyhow::anyhow!("arg_default_rb called on arg with no default value").into(),
-            )),
+        self.default_rb(arg.default_value(), &arg.as_type(), "arg")
+    }
+
+    fn default_rb(
+        &self,
+        default: Option<&DefaultValue>,
+        ty: &Type,
+        what: &str,
+    ) -> Result<String, askama::Error> {
+        match default {
+            Some(default) => filters::default_rb_inner(default, ty, self),
+            None => Err(askama_err(anyhow!(
+                "{what} default requested but none is set"
+            ))),
         }
     }
 
-    /// Module prefix for a Ruby *class name* of this type, if it lives in another crate.
-    ///
-    /// Unlike `ffi_module_prefix`, this applies to records and enums as well: defaults
-    /// construct Ruby objects by class name and do not go through the local RustBuffer.
+    /// Prefix for constructing a Ruby class (defaults). Unlike `ffi_module_prefix`,
+    /// this includes records and enums.
     pub(crate) fn type_class_module(&self, type_: &Type) -> Option<String> {
-        match type_ {
-            Type::Box { inner_type } => self.type_class_module(inner_type),
-            Type::Custom { builtin, .. } => self.type_class_module(builtin),
+        match peel_boxes_and_custom(type_) {
             Type::Record { module_path, .. }
             | Type::Object { module_path, .. }
             | Type::Enum { module_path, .. }
@@ -558,17 +501,84 @@ mod filters {
 
     /// Qualify `name` with an optional external module path.
     ///
-    /// External modules are rooted at `::` so lookup does not bind a nested
-    /// constant of the same name inside the consumer module.
-    /// `qualify("Foo", Some("Mod"))` yields `"::Mod::Foo"`;
-    /// `qualify("", Some("Mod"))` yields `"::Mod::"` (prefix for RustBuffer / converters);
-    /// with `None` it yields `"Foo"` unchanged (local, relative). This is the
-    /// single source of truth for prefixing names with their owning module
-    /// across the lift/lower/check filters.
-    fn qualify(name: &str, module: Option<&str>) -> String {
+    /// `qualify("Foo", Some("Mod"))` → `"::Mod::Foo"`; `qualify("", Some("Mod"))`
+    /// → `"::Mod::"`; `None` leaves `name` unchanged (local, relative).
+    pub(super) fn qualify(name: &str, module: Option<&str>) -> String {
         match module {
             Some(m) => format!("::{m}::{name}"),
             None => name.to_string(),
+        }
+    }
+
+    /// How a type crosses the FFI after peeling `Type::Box`. Custom is *not*
+    /// peeled: lift/lower wrap with `uniffi_{lift,lower}_*` then recurse.
+    enum FfiShape<'a> {
+        Custom {
+            name: &'a str,
+            builtin: &'a Type,
+            module_path: &'a str,
+        },
+        Int,
+        Float,
+        Boolean,
+        Object {
+            name: &'a str,
+        },
+        Callback {
+            name: &'a str,
+        },
+        RustBuffer,
+    }
+
+    fn ffi_shape(type_: &Type) -> FfiShape<'_> {
+        match peel_boxes(type_) {
+            Type::Custom {
+                name,
+                builtin,
+                module_path,
+                ..
+            } => FfiShape::Custom {
+                name,
+                builtin,
+                module_path,
+            },
+            Type::Int8
+            | Type::UInt8
+            | Type::Int16
+            | Type::UInt16
+            | Type::Int32
+            | Type::UInt32
+            | Type::Int64
+            | Type::UInt64 => FfiShape::Int,
+            Type::Float32 | Type::Float64 => FfiShape::Float,
+            Type::Boolean => FfiShape::Boolean,
+            Type::Object { name, .. } => FfiShape::Object { name },
+            Type::CallbackInterface { name, .. } => FfiShape::Callback { name },
+            Type::Enum { .. }
+            | Type::Record { .. }
+            | Type::Optional { .. }
+            | Type::Sequence { .. }
+            | Type::Set { .. }
+            | Type::Timestamp
+            | Type::String
+            | Type::Bytes
+            | Type::Duration
+            | Type::Map { .. } => FfiShape::RustBuffer,
+            Type::Box { .. } => unreachable!("peeled"),
+        }
+    }
+
+    fn int_coerce_bounds(type_: &Type) -> Option<(&'static str, &'static str, &'static str)> {
+        match type_ {
+            Type::Int8 => Some(("i8", "-2**7", "2**7")),
+            Type::Int16 => Some(("i16", "-2**15", "2**15")),
+            Type::Int32 => Some(("i32", "-2**31", "2**31")),
+            Type::Int64 => Some(("i64", "-2**63", "2**63")),
+            Type::UInt8 => Some(("u8", "0", "2**8")),
+            Type::UInt16 => Some(("u16", "0", "2**16")),
+            Type::UInt32 => Some(("u32", "0", "2**32")),
+            Type::UInt64 => Some(("u64", "0", "2**64")),
+            _ => None,
         }
     }
 
@@ -599,15 +609,14 @@ mod filters {
         })
     }
 
-    /// Generate the Ruby FFI::Pointer write method name for writing a lowered return value.
-    /// For RustBuffer returns, return "rustbuffer" as a sentinel - template handles it specially.
+    /// Ruby FFI::Pointer write method for a lowered callback return.
+    /// `rustbuffer` is a sentinel the template handles specially.
     #[askama::filter_fn]
     pub fn ffi_write_return_rb(
         return_type: &Type,
         _: &dyn askama::Values,
     ) -> Result<String, askama::Error> {
         let ffi_type = FfiType::from(return_type);
-
         match &ffi_type {
             FfiType::Int8 => Ok("write_int8".to_string()),
             FfiType::UInt8 => Ok("write_uint8".to_string()),
@@ -621,13 +630,13 @@ mod filters {
             FfiType::Float64 => Ok("write_double".to_string()),
             FfiType::Handle => Ok("write_uint64".to_string()),
             FfiType::RustBuffer(_) => Ok("rustbuffer".to_string()),
-            _ => Err(askama::Error::Custom(
-                anyhow::anyhow!("Unsupported FFI return type for callback: {ffi_type:?}").into(),
-            )),
+            _ => Err(askama_err(anyhow!(
+                "Unsupported FFI return type for callback: {ffi_type:?}"
+            ))),
         }
     }
 
-    /// Return the Ruby default value for an FFI return type (used in async error callbacks).
+    /// Ruby default value for an FFI return type (async error callbacks).
     #[askama::filter_fn]
     pub fn ffi_default_value_rb(
         return_type: &Type,
@@ -646,13 +655,13 @@ mod filters {
             | FfiType::Handle => Ok("0".to_string()),
             FfiType::Float32 | FfiType::Float64 => Ok("0.0".to_string()),
             FfiType::RustBuffer(_) => Ok("RustBuffer.new".to_string()),
-            _ => Err(askama::Error::Custom(
-                anyhow::anyhow!("Unsupported FFI return type for callback: {ffi_type:?}").into(),
-            )),
+            _ => Err(askama_err(anyhow!(
+                "Unsupported FFI return type for callback: {ffi_type:?}"
+            ))),
         }
     }
 
-    /// Return the ForeignFutureResult struct name for a method's return type.
+    /// ForeignFutureResult struct name for a method's return type.
     #[askama::filter_fn]
     pub fn foreign_future_result_rb(
         method: &Method,
@@ -696,19 +705,15 @@ mod filters {
                     Type::Custom { builtin, .. } => match builtin.as_ref() {
                         Type::Optional { inner_type } => inner_type.as_ref(),
                         other => {
-                            return Err(askama::Error::Custom(
-                                anyhow::anyhow!(
-                                    "Expected Optional type for Some literal, got {other:?}"
-                                )
-                                .into(),
-                            ));
+                            return Err(askama_err(anyhow!(
+                                "Expected Optional type for Some literal, got {other:?}"
+                            )));
                         }
                     },
                     _ => {
-                        return Err(askama::Error::Custom(
-                            anyhow::anyhow!("Expected Optional type for Some literal, got {ty:?}")
-                                .into(),
-                        ));
+                        return Err(askama_err(anyhow!(
+                            "Expected Optional type for Some literal, got {ty:?}"
+                        )));
                     }
                 };
                 default_rb_inner(inner, inner_ty, wrapper)?
@@ -728,9 +733,9 @@ mod filters {
                     )
                 }
                 _ => {
-                    return Err(askama::Error::Custom(
-                        anyhow::anyhow!("Unexpected type in enum literal: {type_:?}").into(),
-                    ));
+                    return Err(askama_err(anyhow!(
+                        "Unexpected type in enum literal: {type_:?}"
+                    )));
                 }
             },
             // https://docs.ruby-lang.org/en/2.0.0/syntax/literals_rdoc.html
@@ -748,7 +753,6 @@ mod filters {
         })
     }
 
-    /// Return the Ruby zero/default value for a type (used for `#[uniffi::default]`).
     fn type_zero_value_rb(ty: &Type, wrapper: &RubyWrapper<'_>) -> Result<String, askama::Error> {
         Ok(match ty {
             Type::Int8
@@ -767,8 +771,6 @@ mod filters {
             Type::Bytes => "\"\".b".to_string(),
             Type::Map { .. } => "{}".to_string(),
             Type::Set { .. } => "Set.new".to_string(),
-            // Named types with no-arg constructors. Qualify external crates so
-            // Ruby does not look the class up inside the consumer module.
             Type::Record { name, .. } | Type::Object { name, .. } => {
                 format!(
                     "{}.new",
@@ -778,12 +780,9 @@ mod filters {
                     )
                 )
             }
-            // Custom types delegate to their underlying builtin
             Type::Custom { builtin, .. } => type_zero_value_rb(builtin, wrapper)?,
             _ => {
-                return Err(askama::Error::Custom(
-                    anyhow::anyhow!("No zero value for type {ty:?}").into(),
-                ))
+                return Err(askama_err(anyhow!("No zero value for type {ty:?}")));
             }
         })
     }
@@ -819,20 +818,22 @@ mod filters {
         nm: S1,
         ns: S2,
         type_: &Type,
-        custom_types: &HashMap<String, CustomTypeConfig>,
         wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
         let nm = nm.as_ref();
         let ns = ns.as_ref();
         Ok(match type_ {
-            Type::Int8 => format!("::{ns}::uniffi_in_range({nm}, \"i8\", -2**7, 2**7)"),
-            Type::Int16 => format!("::{ns}::uniffi_in_range({nm}, \"i16\", -2**15, 2**15)"),
-            Type::Int32 => format!("::{ns}::uniffi_in_range({nm}, \"i32\", -2**31, 2**31)"),
-            Type::Int64 => format!("::{ns}::uniffi_in_range({nm}, \"i64\", -2**63, 2**63)"),
-            Type::UInt8 => format!("::{ns}::uniffi_in_range({nm}, \"u8\", 0, 2**8)"),
-            Type::UInt16 => format!("::{ns}::uniffi_in_range({nm}, \"u16\", 0, 2**16)"),
-            Type::UInt32 => format!("::{ns}::uniffi_in_range({nm}, \"u32\", 0, 2**32)"),
-            Type::UInt64 => format!("::{ns}::uniffi_in_range({nm}, \"u64\", 0, 2**64)"),
+            Type::Int8
+            | Type::Int16
+            | Type::Int32
+            | Type::Int64
+            | Type::UInt8
+            | Type::UInt16
+            | Type::UInt32
+            | Type::UInt64 => {
+                let (ty, lo, hi) = int_coerce_bounds(type_).expect("int type");
+                format!("::{ns}::uniffi_in_range({nm}, \"{ty}\", {lo}, {hi})")
+            }
             Type::Float32
             | Type::Float64
             | Type::Object { .. }
@@ -845,13 +846,10 @@ mod filters {
             Type::String => format!("::{ns}::uniffi_utf8({nm})"),
             Type::Bytes => format!("::{ns}::uniffi_bytes({nm})"),
             Type::Optional { inner_type: t } => {
-                format!(
-                    "({nm} ? {} : nil)",
-                    coerce_rb_inner(nm, ns, t, custom_types, wrapper)?
-                )
+                format!("({nm} ? {} : nil)", coerce_rb_inner(nm, ns, t, wrapper)?)
             }
             Type::Sequence { inner_type: t } => {
-                let coerce_code = coerce_rb_inner("v", ns, t, custom_types, wrapper)?;
+                let coerce_code = coerce_rb_inner("v", ns, t, wrapper)?;
                 if coerce_code == "v" {
                     nm.to_string()
                 } else {
@@ -859,7 +857,7 @@ mod filters {
                 }
             }
             Type::Set { inner_type: t } => {
-                let coerce_code = coerce_rb_inner("v", ns, t, custom_types, wrapper)?;
+                let coerce_code = coerce_rb_inner("v", ns, t, wrapper)?;
                 if coerce_code == "v" {
                     nm.to_string()
                 } else {
@@ -870,8 +868,8 @@ mod filters {
                 key_type: kt,
                 value_type: vt,
             } => {
-                let k_coerce_code = coerce_rb_inner("k", ns, kt, custom_types, wrapper)?;
-                let v_coerce_code = coerce_rb_inner("v", ns, vt, custom_types, wrapper)?;
+                let k_coerce_code = coerce_rb_inner("k", ns, kt, wrapper)?;
+                let v_coerce_code = coerce_rb_inner("v", ns, vt, wrapper)?;
 
                 if k_coerce_code == "k" && v_coerce_code == "v" {
                     nm.to_string()
@@ -881,15 +879,17 @@ mod filters {
                     )
                 }
             }
-            Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type, custom_types, wrapper)?,
+            Type::Box { inner_type } => coerce_rb_inner(nm, ns, inner_type, wrapper)?,
             Type::Custom { name, builtin, .. } => {
                 // Config-backed and imported customs skip consumer-side builtin
                 // coerce. Identity newtypes coerce inside the defining crate's
                 // `uniffi_lower_*` so `to_int` / `to_str` still flow to FFI.
-                if custom_types.contains_key(name) || wrapper.is_external_custom(type_) {
+                if wrapper.config.custom_types.contains_key(name)
+                    || wrapper.is_external_custom(type_)
+                {
                     nm.to_string()
                 } else {
-                    coerce_rb_inner(nm, ns, builtin, custom_types, wrapper)?
+                    coerce_rb_inner(nm, ns, builtin, wrapper)?
                 }
             }
         })
@@ -901,38 +901,35 @@ mod filters {
         module: Option<&str>,
         wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
-        Ok(match type_ {
-            Type::Object { name, .. } => {
+        Ok(match ffi_shape(type_) {
+            FfiShape::Object { name } => {
                 format!(
                     "({}.uniffi_check_lower {nm})",
                     qualify(&class_name_rb_inner(name), module)
                 )
             }
-            Type::Enum { .. }
-            | Type::Record { .. }
-            | Type::Optional { .. }
-            | Type::Sequence { .. }
-            | Type::Set { .. }
-            | Type::Map { .. } => {
-                format!(
+            FfiShape::RustBuffer => match peel_boxes(type_) {
+                Type::Enum { .. }
+                | Type::Record { .. }
+                | Type::Optional { .. }
+                | Type::Sequence { .. }
+                | Type::Set { .. }
+                | Type::Map { .. } => format!(
                     "{}RustBuffer.check_lower_{}({nm})",
                     qualify("", module),
                     canonical_name(type_)
-                )
-            }
-            Type::Box { inner_type } => check_lower_rb_inner(nm, inner_type, module, wrapper)?,
-            Type::Custom {
+                ),
+                _ => String::new(),
+            },
+            FfiShape::Custom {
                 name,
                 builtin,
                 module_path,
-                ..
             } => {
                 // External types always use the defining crate's checker
-                // (identity newtypes forward to the builtin there, so an
-                // imported NestedObject still runs InnerObject.uniffi_check_lower).
+                // (identity newtypes forward to the builtin there).
                 // Local types with a `type_name` use this crate's checker.
-                // Identity local newtypes recurse so a wrapper like
-                // `LocalUrl = Url` still checks `URI`.
+                // Identity local newtypes recurse so `LocalUrl = Url` still checks `URI`.
                 let has_local_type_name = wrapper
                     .config
                     .custom_types
@@ -959,18 +956,15 @@ mod filters {
         module: Option<&str>,
         wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
-        Ok(match type_ {
-            // Named-handle types that recurse without touching a RustBuffer.
-            Type::Box { inner_type } => lower_rb_inner_dispatch(nm, inner_type, module, wrapper)?,
-            Type::Custom {
+        Ok(match ffi_shape(type_) {
+            FfiShape::Custom {
                 builtin,
                 module_path,
                 ..
             } => {
                 // Convert via the owning module, then lower the builtin.
                 // Forward `module` so Object/CallbackInterface stay qualified.
-                // Do not also apply consumer `custom_types` — that lives in
-                // `uniffi_lower_*` (CustomTypeTemplate.rb).
+                // Consumer `custom_types` live in `uniffi_lower_*` (CustomTypeTemplate.rb).
                 let converted = format!(
                     "{}.uniffi_lower_{}({nm})",
                     wrapper.custom_owner_module(module_path),
@@ -978,25 +972,15 @@ mod filters {
                 );
                 lower_rb_inner_dispatch(&converted, builtin, module, wrapper)?
             }
-            // Builtin primitives passed through by value.
-            Type::Int8
-            | Type::UInt8
-            | Type::Int16
-            | Type::UInt16
-            | Type::Int32
-            | Type::UInt32
-            | Type::Int64
-            | Type::UInt64
-            | Type::Float32
-            | Type::Float64 => nm.to_string(),
-            Type::Boolean => format!("({nm} ? 1 : 0)"),
-            Type::Object { name, .. } => {
+            FfiShape::Int | FfiShape::Float => nm.to_string(),
+            FfiShape::Boolean => format!("({nm} ? 1 : 0)"),
+            FfiShape::Object { name } => {
                 format!(
                     "({}.uniffi_lower {nm})",
                     qualify(&class_name_rb_inner(name), module)
                 )
             }
-            Type::CallbackInterface { name, .. } => {
+            FfiShape::Callback { name } => {
                 format!(
                     "({}CallbackInterface{}FfiConverter.lower {})",
                     qualify("", module),
@@ -1004,17 +988,7 @@ mod filters {
                     nm
                 )
             }
-            // Types serialized through a RustBuffer.
-            Type::Enum { .. }
-            | Type::Record { .. }
-            | Type::Optional { .. }
-            | Type::Sequence { .. }
-            | Type::Set { .. }
-            | Type::Timestamp
-            | Type::String
-            | Type::Bytes
-            | Type::Duration
-            | Type::Map { .. } => {
+            FfiShape::RustBuffer => {
                 format!(
                     "{}RustBuffer.alloc_from_{}({})",
                     qualify("", module),
@@ -1031,18 +1005,13 @@ mod filters {
         module: Option<&str>,
         wrapper: &RubyWrapper<'_>,
     ) -> Result<String, askama::Error> {
-        Ok(match type_ {
-            // Named-handle types that recurse without touching a RustBuffer.
-            Type::Box { inner_type } => lift_rb_inner_dispatch(nm, inner_type, module, wrapper)?,
-            Type::Custom {
+        Ok(match ffi_shape(type_) {
+            FfiShape::Custom {
                 builtin,
                 module_path,
                 ..
             } => {
                 // Lift the builtin, then convert via the owning module.
-                // Forward `module` so Object/CallbackInterface stay qualified.
-                // Do not also apply consumer `custom_types` — that lives in
-                // `uniffi_lift_*` (CustomTypeTemplate.rb).
                 let lifted = lift_rb_inner_dispatch(nm, builtin, module, wrapper)?;
                 format!(
                     "{}.uniffi_lift_{}({lifted})",
@@ -1050,147 +1019,57 @@ mod filters {
                     canonical_name(type_),
                 )
             }
-            // Builtin primitives passed through by value.
-            Type::Int8
-            | Type::UInt8
-            | Type::Int16
-            | Type::UInt16
-            | Type::Int32
-            | Type::UInt32
-            | Type::Int64
-            | Type::UInt64 => format!("{nm}.to_i"),
-            Type::Float32 | Type::Float64 => format!("{nm}.to_f"),
-            Type::Boolean => format!("1 == {nm}"),
-            Type::Object { name, .. } => {
+            FfiShape::Int => format!("{nm}.to_i"),
+            FfiShape::Float => format!("{nm}.to_f"),
+            FfiShape::Boolean => format!("1 == {nm}"),
+            FfiShape::Object { name } => {
                 format!(
                     "{}.uniffi_lift({nm})",
                     qualify(&class_name_rb_inner(name), module)
                 )
             }
-            Type::CallbackInterface { name, .. } => {
+            FfiShape::Callback { name } => {
                 format!(
                     "({}CallbackInterface{}FfiConverter.lift {nm})",
                     qualify("", module),
                     class_name_rb_inner(name)
                 )
             }
-            Type::Enum { .. } => {
-                format!(
-                    "{nm}.consume_into_{}",
-                    class_name_rb_inner(&canonical_name(type_))
-                )
-            }
-            // Types deserialized from a RustBuffer.
-            Type::Record { .. }
-            | Type::Optional { .. }
-            | Type::Sequence { .. }
-            | Type::Set { .. }
-            | Type::Timestamp
-            | Type::String
-            | Type::Bytes
-            | Type::Duration
-            | Type::Map { .. } => {
+            FfiShape::RustBuffer => {
                 format!("{nm}.consume_into_{}", canonical_name(type_))
             }
         })
     }
 
     /// Render the Ruby expression that lowers the `self` value of a trait method.
-    /// For Object types, this is `(ClassName.uniffi_lower self)`.
-    /// For Record/Enum types, this serializes `self` into a RustBuffer.
     #[askama::filter_fn]
     pub fn lower_method_self_rb(
         meth: &Method,
         _: &dyn askama::Values,
         wrapper: &RubyWrapper<'filter>,
     ) -> Result<String, askama::Error> {
-        let self_type = meth.self_type().ok_or_else(|| {
-            askama::Error::Custom(anyhow::anyhow!("Trait method must have a self type").into())
-        })?;
+        let self_type = meth
+            .self_type()
+            .ok_or_else(|| askama_err(anyhow!("Trait method must have a self type")))?;
         wrapper.lower_rb("self", &self_type)
     }
 
-    /// Render a Ruby integer literal for the discriminant of the variant at `index` in enum `e`.
+    /// Ruby integer literal for the discriminant of the variant at `index` in enum `e`.
     #[askama::filter_fn]
     pub fn variant_discr_literal(
         e: &Enum,
         _: &dyn askama::Values,
         index: &usize,
     ) -> Result<String, askama::Error> {
-        let literal = e
-            .variant_discr(*index)
-            .map_err(|err| askama::Error::Custom(err.into()))?;
+        let literal = e.variant_discr(*index).map_err(askama_err)?;
 
         match literal {
             Literal::UInt(v, _, _) => Ok(v.to_string()),
             Literal::Int(v, _, _) => Ok(v.to_string()),
-            _ => Err(askama::Error::Custom(
-                anyhow::anyhow!("Only integer discriminants are supported").into(),
-            )),
+            _ => Err(askama_err(anyhow!(
+                "Only integer discriminants are supported"
+            ))),
         }
-    }
-
-    #[cfg(test)]
-    mod qualify_tests {
-        use super::qualify;
-
-        #[test]
-        fn roots_external_module() {
-            assert_eq!(qualify("Foo", Some("Mod")), "::Mod::Foo");
-        }
-
-        #[test]
-        fn roots_external_module_prefix() {
-            assert_eq!(qualify("", Some("Mod")), "::Mod::");
-        }
-
-        #[test]
-        fn leaves_local_name_unprefixed() {
-            assert_eq!(qualify("Foo", None), "Foo");
-        }
-    }
-}
-
-#[cfg(test)]
-mod test_type {
-    use super::*;
-
-    #[test]
-    fn test_canonical_names() {
-        // Non-exhaustive, but gives a bit of a flavour of what we want.
-        assert_eq!(canonical_name(&Type::UInt8), "u8");
-        assert_eq!(canonical_name(&Type::String), "string");
-        assert_eq!(canonical_name(&Type::Bytes), "bytes");
-        assert_eq!(
-            canonical_name(&Type::Optional {
-                inner_type: Box::new(Type::Sequence {
-                    inner_type: Box::new(Type::Object {
-                        module_path: "anything".to_string(),
-                        name: "Example".into(),
-                        imp: ObjectImpl::Struct,
-                    })
-                })
-            }),
-            "OptionalSequenceTypeExample"
-        );
-
-        let map = Type::Map {
-            key_type: Box::new(Type::UInt32),
-            value_type: Box::new(Type::UInt32),
-        };
-        assert_eq!(canonical_name(&map), "MapU32U32");
-        assert_eq!(
-            canonical_name(&Type::Enum {
-                module_path: "foo".to_string(),
-                name: "HTMLError".to_string()
-            }),
-            "TypeHTMLError"
-        );
-    }
-
-    #[test]
-    fn test_class_name() {
-        assert_eq!(class_name_rb_inner("Example"), "Example");
     }
 }
 
