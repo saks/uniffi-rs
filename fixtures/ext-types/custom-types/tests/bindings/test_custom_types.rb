@@ -69,4 +69,38 @@ class TestCustomTypes < Test::Unit::TestCase
     assert_equal 2, ExtTypesCustom.get_handle_u8(nil)
     assert_equal 42, ExtTypesCustom.get_handle_u8(42)
   end
+
+  # -- NestedObject / NestedRecord (identity custom types over Object / Record) --
+
+  def test_nested_object
+    obj = ExtTypesCustom::InnerObject.new
+    result = ExtTypesCustom.get_nested_object(obj)
+    assert_instance_of ExtTypesCustom::InnerObject, result
+  end
+
+  def test_nested_record
+    rec = ExtTypesCustom::InnerRecord.new(i: 1)
+    result = ExtTypesCustom.get_nested_record(rec)
+    assert_equal 1, result.i
+  end
+
+  # -- GuidCallback (custom type passed through callback interface) --
+
+  class GuidCallbackImpl < ExtTypesCustom::GuidCallback
+    attr_reader :saw_guid
+
+    def run(guid)
+      @saw_guid = guid
+      guid
+    end
+  end
+
+  def test_guid_callback
+    impl = GuidCallbackImpl.new
+
+    result = ExtTypesCustom.run_callback(impl)
+
+    assert_equal 'callback-test-payload', result
+    assert_equal 'callback-test-payload', impl.saw_guid
+  end
 end

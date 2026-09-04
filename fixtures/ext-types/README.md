@@ -8,6 +8,11 @@ The various other crates all inter-relate and are ultimately consumed by the abo
 - `custom-types` is all about wrapping types (eg, Guid, Handle) in a native type (eg, String, u64)
 - `uniffi-one` is just a normal other crate also using uniffi.
 - `sub-lib` itself consumes and exposes the other types.
+- `transitive-lib` consumes only `sub-lib` (not `uniffi-one` directly) so Ruby
+  nested-mixin dispatch cannot hide behind a superset include set.
+- `collision-a` / `collision-b` / `collision-lib` two crates that both export
+  a record named `Foo`, plus a consumer that roundtrips `A::Foo` and
+  `B::Rec { foo: B::Foo }`. Demonstrates Ruby mixin method-name flattening.
 - `external-crate` doesn't depend on uniffi but has types we expose.
 
 etc.
