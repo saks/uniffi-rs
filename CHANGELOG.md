@@ -18,6 +18,9 @@
   See [#2911](https://github.com/mozilla/uniffi-rs/pull/2911).
 - Added support for remote trait interfaces - ie, traits defined in a crate which doesn't use
   UniFFI. Use `#[uniffi::export(remote)]` or `[Trait, Remote]` in UDL. Foreign implementations are not supported, see the docs for more.
+- Ruby: Add `bindings.ruby.module_name` to set the generated module name. In library mode,
+  `[bindings.ruby.external_packages]` is auto-filled from each peer's `module_name`; a consumer
+  override that does not match is a bindgen error.
 
 ### What's Fixed
 - Kotlin: Fixed messages for error classes that inherit `Throwable`, but not `Exception`.
@@ -92,6 +95,7 @@
 - Ruby: Expose standard Rust traits for generated ruby code (#2883)
 - Ruby: Add support for sync foreign traits ([#2916](https://github.com/mozilla/uniffi-rs/pull/2916))
 - Ruby: Add async support ([#2923](https://github.com/mozilla/uniffi-rs/pull/2923))
+- Ruby: Add external types support
 - Added zero-copy transfer of `&[u8]` / `[ByRef] bytes` arguments from foreign code to Rust. Kotlin (`java.nio.ByteBuffer`, must be direct), Swift (`Data`), and Python (`bytes`-like, buffer protocol) pass byte buffers as pointer + length (`ForeignBytes`) rather than copying through `RustBuffer`. Not yet supported on Ruby, and not yet supported in async functions on any language ([#2878](https://github.com/mozilla/uniffi-rs/pull/2878)).
 - `#[uniffi::export(async_runtime = "tokio")]` can now be applied to trait exports, wrapping each method's FFI scaffolding future in `async_compat::Compat` the same way it does for inherent impls and free functions ([#2899](https://github.com/mozilla/uniffi-rs/pull/2899)).
 - Added support for using `HashSet` with proc-macros

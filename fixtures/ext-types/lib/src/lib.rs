@@ -1,5 +1,5 @@
 use custom_types::Handle;
-use ext_types_custom::{ANestedGuid, Guid, HandleU8, Ouid};
+use ext_types_custom::{ANestedGuid, Guid, HandleU8, NestedObject, NestedRecord, Ouid};
 use ext_types_external_crate::{
     ExternalCrateDictionary, ExternalCrateEnumInterface, ExternalCrateInterface,
     ExternalCrateNonExhaustiveEnum, ExternalCrateTrait,
@@ -118,6 +118,16 @@ fn get_imported_handle_u8(h: Option<HandleU8>) -> HandleU8 {
     h.unwrap_or(HandleU8(3))
 }
 
+#[uniffi::export]
+fn get_imported_nested_object(n: NestedObject) -> NestedObject {
+    n
+}
+
+#[uniffi::export]
+fn get_imported_nested_record(n: NestedRecord) -> NestedRecord {
+    n
+}
+
 // external custom types wrapping external custom types.
 #[uniffi::export]
 fn get_imported_nested_guid(guid: Option<ANestedGuid>) -> ANestedGuid {
@@ -174,6 +184,29 @@ async fn get_local_external_guid_async() -> LocalExternalGuid {
     LocalExternalGuid {
         value: "local-external-guid".to_string(),
     }
+}
+
+// Local custom type whose builtin is an imported custom type with a real
+// bindings conversion (Url → URI). Identity Guid wrappers cannot catch a
+// dropped defining-crate converter; this one can.
+pub struct LocalUrl(pub Url);
+uniffi::custom_newtype!(LocalUrl, Url);
+
+#[uniffi::export]
+fn get_local_url(url: Option<LocalUrl>) -> LocalUrl {
+    url.unwrap_or_else(|| LocalUrl(Url::parse("http://example.com/").unwrap()))
+}
+
+#[derive(uniffi::Record)]
+pub struct LocalUrlHolder {
+    pub url: LocalUrl,
+}
+
+#[uniffi::export]
+fn get_local_url_holder(holder: Option<LocalUrlHolder>) -> LocalUrlHolder {
+    holder.unwrap_or_else(|| LocalUrlHolder {
+        url: LocalUrl(Url::parse("http://example.com/").unwrap()),
+    })
 }
 
 // A struct
