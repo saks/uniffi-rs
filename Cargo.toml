@@ -58,6 +58,7 @@ members = [
   "fixtures/ext-types/lib",
   "fixtures/ext-types/proc-macro-lib",
   "fixtures/ext-types/sub-lib",
+  "fixtures/ext-types/transitive-lib",
 
   "fixtures/docstring",
   "fixtures/docstring-proc-macro",

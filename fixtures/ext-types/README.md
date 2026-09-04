@@ -8,6 +8,8 @@ The various other crates all inter-relate and are ultimately consumed by the abo
 - `custom-types` is all about wrapping types (eg, Guid, Handle) in a native type (eg, String, u64)
 - `uniffi-one` is just a normal other crate also using uniffi.
 - `sub-lib` itself consumes and exposes the other types.
+- `transitive-lib` consumes only `sub-lib` (not `uniffi-one` directly). Nested
+  `UniffiOne*` fields on `SubLibType` are therefore absent from its interface.
 - `external-crate` doesn't depend on uniffi but has types we expose.
 
 etc.
