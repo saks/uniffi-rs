@@ -31,6 +31,15 @@ fn is_reserved_word(word: &str) -> bool {
     RESERVED_WORDS.contains(&word)
 }
 
+/// A single Ruby constant identifier: `UniffiOne`, not `foo`, `Foo::Bar`, or `END`.
+fn is_valid_ruby_constant(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_uppercase() => chars.all(|c| c.is_ascii_alphanumeric() || c == '_'),
+        _ => false,
+    }
+}
+
 /// Extract the crate name from a module path (everything before the first `::`).
 ///
 /// Hyphens are normalized to underscores so UDL `[External="my-crate"]` and
@@ -144,6 +153,11 @@ impl CustomTypeConfig {
 pub struct Config {
     pub(super) cdylib_name: Option<String>,
     cdylib_path: Option<String>,
+    /// Ruby `module` name emitted in generated bindings.
+    ///
+    /// Default (when unset): UpperCamelCase of the UniFFI namespace.
+    #[serde(default)]
+    pub(super) module_name: Option<String>,
     #[serde(default)]
     custom_types: HashMap<String, CustomTypeConfig>,
     #[serde(default)]
@@ -167,6 +181,32 @@ impl Config {
 
     pub fn cdylib_path(&self) -> String {
         self.cdylib_path.clone().unwrap_or_default()
+    }
+
+    /// Ruby module name for this crate: config override or UpperCamelCase(`namespace`).
+    pub fn module_name(&self, namespace: &str) -> String {
+        self.module_name
+            .clone()
+            .unwrap_or_else(|| class_name_rb_inner(namespace))
+    }
+
+    /// Default `module_name` when the TOML omits it: UpperCamelCase of the namespace.
+    pub(super) fn default_module_name(namespace: &str) -> String {
+        class_name_rb_inner(namespace)
+    }
+
+    /// Reject nested paths, reserved words, and non-constant identifiers.
+    pub(super) fn validate_module_name(&self) -> Result<()> {
+        let Some(name) = &self.module_name else {
+            return Ok(());
+        };
+        if !is_valid_ruby_constant(name) || is_reserved_word(name) {
+            bail!(
+                "invalid [bindings.ruby.module_name] `{name}`: must be a single Ruby constant \
+                 (e.g. `UniffiOne`), not nested (`Foo::Bar`) or a reserved word"
+            );
+        }
+        Ok(())
     }
 
     pub fn external_package_name(&self, module_path: &str, namespace: Option<&str>) -> String {
@@ -215,6 +255,11 @@ impl<'a> RubyWrapper<'a> {
         Self { config, ci }
     }
 
+    /// Ruby `module` name emitted for this crate (config or UpperCamelCase(namespace)).
+    pub fn module_name(&self) -> String {
+        self.config.module_name(self.ci.namespace())
+    }
+
     /// Resolve the Ruby module name for an external type's crate.
     /// Uses config.external_packages if configured, otherwise falls back to the namespace name.
     pub fn external_type_module(&self, module_path: &str) -> String {
@@ -229,7 +274,7 @@ impl<'a> RubyWrapper<'a> {
 
     /// Ruby module that owns mixin read/write for `type_`.
     ///
-    /// Named types defined in another crate → that crate's namespace module
+    /// Named types defined in another crate → that crate's Ruby module
     /// (`external_type_module`). Everything else (primitives, Timestamp,
     /// Duration, Optional/Sequence/Map/Set, local named types) → this crate.
     /// `Type::Box` recurses. Always rooted at `::` so lookup cannot bind a
@@ -251,7 +296,7 @@ impl<'a> RubyWrapper<'a> {
             {
                 self.external_type_module(module_path)
             }
-            _ => class_name_rb_inner(self.ci.namespace()),
+            _ => self.module_name(),
         };
         format!("::{module}")
     }
@@ -430,14 +475,14 @@ impl<'a> RubyWrapper<'a> {
     /// Ruby module that owns `uniffi_lift_*` / `uniffi_lower_*` for a custom type.
     ///
     /// External types use the defining crate's module; local types use this
-    /// crate's namespace so the call is valid from instance methods as well
+    /// crate's `module_name` so the call is valid from instance methods as well
     /// as `def self.` functions. Always rooted at `::` so lookup does not bind
     /// a nested constant of the same name inside the consumer module.
     pub(crate) fn custom_owner_module(&self, module_path: &str) -> String {
         let module = if self.is_external_module(module_path) {
             self.external_type_module(module_path)
         } else {
-            class_name_rb_inner(self.ci.namespace())
+            self.module_name()
         };
         format!("::{module}")
     }
@@ -462,7 +507,7 @@ impl<'a> RubyWrapper<'a> {
     }
 
     pub fn coerce_rb(&self, nm: impl AsRef<str>, type_: &Type) -> Result<String, askama::Error> {
-        let ns = class_name_rb_inner(self.ci.namespace());
+        let ns = self.module_name();
         filters::coerce_rb_inner(nm, ns, type_, &self.config.custom_types, self)
     }
 

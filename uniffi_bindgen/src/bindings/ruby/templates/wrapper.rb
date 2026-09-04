@@ -28,7 +28,7 @@ require '{{ ext.require_path }}'
 require '{{ import_name }}'
 {%- endfor %}
 
-module {{ ci.namespace()|class_name_rb }}
+module {{ self.module_name() }}
   {% include "Helpers.rb" %}
 
   {%- if ci.has_callback_definitions() %}

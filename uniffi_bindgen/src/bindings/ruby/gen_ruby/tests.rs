@@ -68,6 +68,78 @@ fn cdylib_path() {
 }
 
 #[test]
+fn module_name_falls_back_to_namespace_camel_case() {
+    let config = Config::default();
+    assert_eq!(config.module_name("foo_ns"), "FooNs");
+}
+
+#[test]
+fn module_name_config_overrides_namespace() {
+    let config = Config {
+        module_name: Some("CustomFoo".into()),
+        ..Default::default()
+    };
+    assert_eq!(config.module_name("foo_ns"), "CustomFoo");
+}
+
+#[test]
+fn module_name_rejects_invalid_identifiers() {
+    for name in ["foo", "Foo::Bar", "", "END", "1Foo"] {
+        let config = Config {
+            module_name: Some(name.into()),
+            ..Default::default()
+        };
+        let err = config.validate_module_name().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("module_name"), "name={name:?}: {msg}");
+        assert!(msg.contains(name), "name={name:?}: {msg}");
+    }
+}
+
+#[test]
+fn module_name_accepts_valid_constant() {
+    let config = Config {
+        module_name: Some("UniffiOne".into()),
+        ..Default::default()
+    };
+    config.validate_module_name().unwrap();
+}
+
+#[test]
+fn generate_emits_configured_module_name() {
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace foo_ns {};
+        dictionary Foo { string value; };
+        "#,
+        "test",
+    )
+    .unwrap();
+    let config = Config {
+        module_name: Some("CustomFoo".into()),
+        ..Default::default()
+    };
+    let src = generate_ruby_bindings(&config, &ci).unwrap();
+    assert!(src.contains("module CustomFoo"), "{src}");
+    assert!(src.contains("::CustomFoo."), "{src}");
+    assert!(src.contains("::CustomFoo::RustBufferBuilderMixin"), "{src}");
+    assert!(!src.contains("module FooNs"), "{src}");
+    assert!(!src.contains("::FooNs."), "{src}");
+}
+
+#[test]
+fn generate_rejects_invalid_module_name() {
+    let ci = ComponentInterface::from_webidl("namespace test {};", "test").unwrap();
+    let config = Config {
+        module_name: Some("foo".into()),
+        ..Default::default()
+    };
+    let err = generate_ruby_bindings(&config, &ci).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(msg.contains("module_name"), "{msg}");
+}
+
+#[test]
 fn crate_name_from_module_path_normalizes_hyphens() {
     assert_eq!(crate_name_from_module_path("my-crate"), "my_crate");
     assert_eq!(crate_name_from_module_path("my_crate"), "my_crate");

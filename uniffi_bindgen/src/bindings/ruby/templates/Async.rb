@@ -62,9 +62,9 @@ def self.uniffi_rust_call_async(rust_future, poll_fn, cancel_fn, complete_fn, fr
     end
 
     result = if error_reader.nil?
-      ::{{ ci.namespace()|class_name_rb }}.rust_call(complete_fn, rust_future)
+      ::{{ self.module_name() }}.rust_call(complete_fn, rust_future)
     else
-      ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error(error_reader, complete_fn, rust_future)
+      ::{{ self.module_name() }}.rust_call_with_error(error_reader, complete_fn, rust_future)
     end
 
     lift_func.call(result)
@@ -149,7 +149,7 @@ def self.uniffi_trait_interface_call_async(make_call, uniffi_out_dropped_callbac
       rescue Exception => e # We have to catch all errors to prevent Rust future from hanging forever.
         next unless once.claim!
 
-        if !error_class.nil? && ::{{ ci.namespace()|class_name_rb }}.uniffi_is_error_type?(e, error_class)
+        if !error_class.nil? && ::{{ self.module_name() }}.uniffi_is_error_type?(e, error_class)
           handle_error.call(UNIFFI_CALLBACK_ERROR, lower_error.call(e))
         else
           handle_error.call(UNIFFI_CALLBACK_UNEXPECTED_ERROR, {{ self.lower_rb("e.inspect", &Type::String)? }})

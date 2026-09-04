@@ -180,11 +180,20 @@ is not supported for external types, as the generator cannot resolve types from
 other crates without their compiled scaffolding metadata; bindgen errors rather
 than emitting incomplete bindings. Library mode generates
 all bindings files together and uses `require` to pull in external modules at runtime.
-By default, UniFFI assumes the Ruby module name is the UniFFI namespace converted to
-UpperCamelCase. This can be overridden in `uniffi.toml` (references only, `require`
-paths still use the namespace / `.rb` filename):
+
+The defining crate's Ruby `module` name defaults to the UniFFI namespace converted
+to UpperCamelCase. Set `[bindings.ruby.module_name]` on that crate to change it.
+Library mode copies each peer's `module_name` into the consumer's
+`[bindings.ruby.external_packages]` map. A consumer-side entry is optional and
+must match; a mismatch is a bindgen error. `require` paths still use the
+namespace / `.rb` filename (references only):
 
 ```
+# defining crate
+[bindings.ruby]
+module_name = "RubyModuleName"
+
+# consumer (optional in library mode; must match the defining crate)
 [bindings.ruby.external_packages]
 # Map crate names from [External={name}] / Cargo.toml into Ruby module names.
 # `rust-crate-name` and `rust_crate_name` are the same key.

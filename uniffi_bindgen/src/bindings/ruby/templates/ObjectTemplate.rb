@@ -14,7 +14,7 @@ class {{ obj.name()|class_name_rb }}{% if ci.is_name_used_as_error(obj.name()) %
   # to the actual instance, only its underlying handle.
   def self.uniffi_define_finalizer_by_handle(handle, object_id)
     Proc.new do |_id|
-      ::{{ ci.namespace()|class_name_rb }}.rust_call(
+      ::{{ self.module_name() }}.rust_call(
         :{{ obj.ffi_object_free().name() }},
         handle
       )
@@ -40,7 +40,7 @@ class {{ obj.name()|class_name_rb }}{% if ci.is_name_used_as_error(obj.name()) %
   end
 
   def uniffi_clone_handle
-    return ::{{ci.namespace()|class_name_rb }}.rust_call(
+    return ::{{ self.module_name() }}.rust_call(
       :{{ obj.ffi_object_clone().name() }},
       @handle
     )
@@ -75,7 +75,7 @@ class {{ obj.name()|class_name_rb }}{% if ci.is_name_used_as_error(obj.name()) %
   end
 
   def uniffi_clone_handle()
-    return ::{{ ci.namespace()|class_name_rb }}.rust_call(
+    return ::{{ self.module_name() }}.rust_call(
       :{{ obj.ffi_object_clone().name() }},
       @handle
     )

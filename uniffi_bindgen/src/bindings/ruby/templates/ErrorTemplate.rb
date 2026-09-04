@@ -103,7 +103,7 @@ end
 
 # This crate's bindings error (panics, protocol mismatches, corrupt buffers).
 # Mixin readers/writers raise this class, so a consumer lifting this crate's types
-# should rescue {{ ci.namespace()|class_name_rb }}::InternalError — not their own
+# should rescue {{ self.module_name() }}::InternalError — not their own
 # crate's InternalError. Matches Python InternalError / Kotlin InternalException.
 class InternalError < StandardError
 end

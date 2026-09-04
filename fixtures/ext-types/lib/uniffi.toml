@@ -6,5 +6,6 @@ uniffi_one_ns = ""
 imported_types_sublib = ""
 
 [bindings.ruby.external_packages]
-uniffi_one_ns = "UniffiOneNs"
-imported_types_sublib = "ImportedTypesSublib"
+# Keys are crate names (`uniffi_one`, `uniffi_sublib`), not UniFFI namespaces.
+uniffi_one = "UniffiOneNs"
+uniffi_sublib = "ImportedTypesSublib"

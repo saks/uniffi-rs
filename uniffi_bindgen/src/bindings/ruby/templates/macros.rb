@@ -23,9 +23,9 @@ values[{{- field_num - 1 -}}]
 {%- macro rust_call_head(func) -%}
     {%- match self.error_reader_method_expr(func) %}
     {%- when Some with (reader) %}
-    ::{{ ci.namespace()|class_name_rb }}.rust_call_with_error({{ reader }},
+    ::{{ self.module_name() }}.rust_call_with_error({{ reader }},
     {%- when None %}
-    ::{{ ci.namespace()|class_name_rb }}.rust_call(
+    ::{{ self.module_name() }}.rust_call(
     {%- endmatch -%}
 {%- endmacro -%}
 
@@ -97,7 +97,7 @@ values[{{- field_num - 1 -}}]
 {%- endmacro -%}
 
 {%- macro to_ffi_call_async(func, prefix = "") -%}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_rust_call_async(
+    ::{{ self.module_name() }}.uniffi_rust_call_async(
       UniFFILib.{{ func.ffi_func().name() }}(
         {%- if !prefix.is_empty() %}{{- prefix }},{% endif %}
         {%- call _arg_list_ffi_call(func) %}{% endcall -%}
@@ -117,7 +117,7 @@ values[{{- field_num - 1 -}}]
 {%- endmacro %}
 
 {%- macro to_ffi_call_async_constructor(func) %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_rust_call_async(
+    ::{{ self.module_name() }}.uniffi_rust_call_async(
       UniFFILib.{{ func.ffi_func().name() }}(
         {%- call _arg_list_ffi_call(func) %}{% endcall -%}
       ),
@@ -252,7 +252,7 @@ values[{{- field_num - 1 -}}]
 {%- macro sync_throws_dispatch(method) %}
     {%- match method.throws_type() %}
     {%- when None %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call(
       uniffi_call_status,
       make_call,
       write_return_value,
@@ -260,7 +260,7 @@ values[{{- field_num - 1 -}}]
     {%- when Some with (error_type) %}
     {%- match error_type %}
     {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call(
       uniffi_call_status,
       make_call,
       write_return_value,
@@ -269,7 +269,7 @@ values[{{- field_num - 1 -}}]
     {%- when Type::Custom { builtin, .. } %}
     {%- match builtin.borrow() %}
     {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call(
       uniffi_call_status,
       make_call,
       write_return_value,
@@ -279,7 +279,7 @@ values[{{- field_num - 1 -}}]
     raise RuntimeError, "Unsupported custom error type"
     {%- endmatch %}
     {%- else %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call(
       uniffi_call_status,
       make_call,
       write_return_value
@@ -295,7 +295,7 @@ values[{{- field_num - 1 -}}]
 {%- macro async_throws_dispatch(method) %}
     {%- match method.throws_type() %}
     {%- when None %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call_async(
       make_call,
       uniffi_out_dropped_callback,
       handle_success,
@@ -304,7 +304,7 @@ values[{{- field_num - 1 -}}]
     {%- when Some with (error_type) %}
     {%- match error_type %}
     {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call_async(
       make_call,
       uniffi_out_dropped_callback,
       handle_success,
@@ -314,7 +314,7 @@ values[{{- field_num - 1 -}}]
     {%- when Type::Custom { builtin, .. } %}
     {%- match builtin.borrow() %}
     {%- when Type::Enum { name, module_path, .. } | Type::Object { name, module_path, .. } %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call_async(
       make_call,
       uniffi_out_dropped_callback,
       handle_success,
@@ -322,7 +322,7 @@ values[{{- field_num - 1 -}}]
       {%- call trait_call_error_args(name, module_path, builtin) %}{% endcall %}
     )
     {%- else %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call_async(
       make_call,
       uniffi_out_dropped_callback,
       handle_success,
@@ -330,7 +330,7 @@ values[{{- field_num - 1 -}}]
     )
     {%- endmatch %}
     {%- else %}
-    ::{{ ci.namespace()|class_name_rb }}.uniffi_trait_interface_call_async(
+    ::{{ self.module_name() }}.uniffi_trait_interface_call_async(
       make_call,
       uniffi_out_dropped_callback,
       handle_success,

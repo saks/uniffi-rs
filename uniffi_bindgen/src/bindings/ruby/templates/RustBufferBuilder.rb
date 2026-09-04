@@ -17,56 +17,56 @@ module RustBufferBuilderMixin
   {% when Type::Int8 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i8", -2**7, 2**7)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "i8", -2**7, 2**7)
     builder.pack_into(1, 'c', v)
   end
 
   {% when Type::UInt8 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u8", 0, 2**8)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "u8", 0, 2**8)
     builder.pack_into(1, 'c', v)
   end
 
   {% when Type::Int16 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i16", -2**15, 2**15)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "i16", -2**15, 2**15)
     builder.pack_into(2, 's>', v)
   end
 
   {% when Type::UInt16 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u16", 0, 2**16)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "u16", 0, 2**16)
     builder.pack_into(2, 'S>', v)
   end
 
   {% when Type::Int32 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i32", -2**31, 2**31)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "i32", -2**31, 2**31)
     builder.pack_into(4, 'l>', v)
   end
 
   {% when Type::UInt32 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u32", 0, 2**32)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "u32", 0, 2**32)
     builder.pack_into(4, 'L>', v)
   end
 
   {% when Type::Int64 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "i64", -2**63, 2**63)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "i64", -2**63, 2**63)
     builder.pack_into(8, 'q>', v)
   end
 
   {% when Type::UInt64 -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_in_range(v, "u64", 0, 2**64)
+    v = ::{{ self.module_name() }}::uniffi_in_range(v, "u64", 0, 2**64)
     builder.pack_into(8, 'Q>', v)
   end
 
@@ -91,7 +91,7 @@ module RustBufferBuilderMixin
   {% when Type::String -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_utf8(v)
+    v = ::{{ self.module_name() }}::uniffi_utf8(v)
     builder.pack_into 4, 'l>', v.bytes.size
     builder.write v
   end
@@ -99,7 +99,7 @@ module RustBufferBuilderMixin
   {% when Type::Bytes -%}
 
   def self.write_{{ canonical_type_name }}(builder, v)
-    v = ::{{ ci.namespace()|class_name_rb }}::uniffi_bytes(v)
+    v = ::{{ self.module_name() }}::uniffi_bytes(v)
     builder.pack_into 4, 'l>', v.bytes.size
     builder.write v
   end
