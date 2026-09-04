@@ -19,4 +19,10 @@ class TestEnums < Test::Unit::TestCase
   def test_custom_type2
     assert_equal({ 'value' => 200 }, UniffiBindgenTests.roundtrip_custom_type2({ 'value' => 200 }))
   end
+
+  def test_verifies_type
+    error = assert_raises(TypeError) { UniffiBindgenTests.roundtrip_custom_type2 42 }
+
+    assert_equal 'Expected Hash, got Integer', error.message
+  end
 end
