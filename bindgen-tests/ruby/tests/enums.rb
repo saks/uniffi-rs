@@ -94,6 +94,20 @@ class TestEnums < Test::Unit::TestCase
     assert_equal 77, result.value.a
   end
 
+  def test_variant_predicates
+    en = ComplexEnum::A.new value: EnumNoData::C
+
+    assert en.a?
+    assert !en.b?
+    assert !en.c?
+
+    en_b = ComplexEnum::B.new value: EnumWithData::A.new(value: 1, value2: 2)
+
+    assert !en_b.a?
+    assert en_b.b?
+    assert !en_b.c?
+  end
+
   # --- ExplicitValuedEnum ---
 
   def test_discriminents

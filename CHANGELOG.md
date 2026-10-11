@@ -24,6 +24,8 @@
 - Ruby: Add external types support (via [#2980](https://github.com/mozilla/uniffi-rs/pull/2980)).
 
 ### What's Fixed
+- Ruby: enum and rich-error variant predicates are emitted once per type. Previously every
+  variant class defined a predicate for every variant, so a type with N variants emitted N² methods.
 - Recursive enums and records are now detected when the cycle passes through a custom type.
   Previously these types were not marked `recursive`, so the Swift bindings were missing `indirect`
   and failed to compile (via [#3005](https://github.com/mozilla/uniffi-rs/issues/3005)).

@@ -75,14 +75,14 @@ class {{ e.name()|class_name_rb }}
       true
     end
     {%- endif %}
+  end
+  {% endfor %}
 
-    # For each variant, we have an `NAME?` method for easily checking
-    # whether an instance is that variant.
-    {% for variant in e.variants() %}
-    def {{ variant.name()|var_name_rb }}?
-      instance_of? {{ e.name()|class_name_rb }}::{{ variant.name()|enum_name_rb }}
-    end
-    {% endfor %}
+  {#- Predicates once on the parent class, inherited by every variant.
+      Emitting them on each subclass is O(N²) and blows up large enums. #}
+  {% for pred_variant in e.variants() %}
+  def {{ pred_variant.name()|var_name_rb }}?
+    instance_of? {{ e.name()|class_name_rb }}::{{ pred_variant.name()|enum_name_rb }}
   end
   {% endfor %}
 end
