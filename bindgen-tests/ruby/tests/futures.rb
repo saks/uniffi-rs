@@ -75,6 +75,9 @@ class TestFutures < Test::Unit::TestCase
 
     obj2 = UniffiBindgenTests.async_roundtrip_obj obj
     assert_equal 'Alice', obj2.name
+
+    rec = AsyncRecord.new name: 'Bob'
+    assert_equal 'Bob', rec.get_name
   end
 
   def test_async_callback_interfaces

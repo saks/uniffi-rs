@@ -23,6 +23,10 @@ impl EnumWithData {
     pub fn roundtrip(&self) -> Self {
         self.clone()
     }
+
+    pub async fn roundtrip_async(&self) -> Self {
+        self.clone()
+    }
 }
 
 #[derive(uniffi::Enum)]

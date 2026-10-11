@@ -22,6 +22,7 @@
   `[bindings.ruby.external_packages]` is auto-filled from each peer's `module_name`; a consumer
   override that does not match is a bindgen error (via [#2980](https://github.com/mozilla/uniffi-rs/pull/2980)).
 - Ruby: Add external types support (via [#2980](https://github.com/mozilla/uniffi-rs/pull/2980)).
+- Ruby: Generate async methods on records and non-flat enums. These methods were previously skipped.
 
 ### What's Fixed
 - Ruby: enum and rich-error variant predicates are emitted once per type. Previously every

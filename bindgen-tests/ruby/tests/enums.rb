@@ -54,6 +54,9 @@ class TestEnums < Test::Unit::TestCase
     assert_kind_of EnumWithData::B, result
     assert_equal 'hello', result[0]
     assert_equal 42, result[1]
+
+    en = EnumWithData::A.new(value: 1, value2: 0)
+    assert_equal en, en.roundtrip_async
   end
 
   # --- ComplexEnum ---

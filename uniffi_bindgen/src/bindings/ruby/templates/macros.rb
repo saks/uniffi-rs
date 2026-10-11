@@ -60,6 +60,10 @@ values[{{- field_num - 1 -}}]
 )
 {%- endmacro -%}
 
+{%- macro to_ffi_call_with_lower_self_async(func) -%}
+    {%- call to_ffi_call_with_prefix_async(func|lower_method_self_rb(self), func) %}{% endcall %}
+{%- endmacro -%}
+
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
         {{- self.lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
