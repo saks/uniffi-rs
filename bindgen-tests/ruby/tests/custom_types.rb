@@ -25,4 +25,10 @@ class TestEnums < Test::Unit::TestCase
     iface = CustomTypeInterface.new 67
     assert_equal(67, UniffiBindgenTests.roundtrip_custom_type3(iface).get_value())
   end
+
+  def test_verifies_type
+    error = assert_raises(TypeError) { UniffiBindgenTests.roundtrip_custom_type2 42 }
+
+    assert_equal 'Expected Hash, got Integer', error.message
+  end
 end
