@@ -321,7 +321,100 @@ module UniFFILib
     end
 
     def to_s
-      "ForeignBytes(len=#{len}, data=#{data.read_bytes(len)})"
+      ptr = data
+      shown = if ptr.nil? || ptr.null? || len <= 0
+        ""
+      else
+        ptr.read_bytes(len)
+      end
+      "ForeignBytes(len=#{len}, data=#{shown})"
+    end
+
+    # Zero-copy view of a Ruby String's buffer as a `ForeignBytes` value.
+    # `str` must stay alive for the duration of the FFI call that receives this.
+    def self.from_ruby_string(str)
+      fb = new
+      length = str.bytesize
+      fb[:len] = length
+      fb[:data] = if length.zero?
+        nil
+      else
+        FFI::Pointer.new(Fiddle::Pointer[str].to_i)
+      end
+      fb
+    end
+  end
+
+  # Zero-copy converter for `&[u8]` / `[ByRef] bytes` arguments.
+  #
+  # Only `lower` and `check_lower` are valid — zero-copy byte buffers only
+  # flow foreign -> Rust, and only in argument position. `lift`, `read`, and
+  # `write` have no sound implementation here.
+  #
+  # Accepts anything `to_str` (same as owned bytes). Frozen strings are fine:
+  # Rust only reads the slice. The caller must keep the source object alive
+  # for the duration of the FFI call (it is passed as the argument, so it is)
+  # and must not mutate or resize it from another thread while the call is in
+  # flight.
+  module FfiConverterByRefBytes
+    def self.check_lower(value)
+      raise TypeError, "no implicit conversion of #{value} into String" unless value.respond_to?(:to_str)
+      value.to_str
+    end
+
+    def self.lower(value)
+      ForeignBytes.from_ruby_string(value)
+    end
+
+    def self.lift(_value)
+      raise InternalError, "ByRef bytes cannot be lifted: zero-copy &[u8] only flows foreign->Rust"
+    end
+
+    def self.read(_buf)
+      raise InternalError, "ByRef bytes cannot be read from a buffer: zero-copy &[u8] is only supported in argument position, not nested in records/options/etc."
+    end
+
+    def self.write(_value, _buf)
+      raise InternalError, "ByRef bytes cannot be written to a buffer: zero-copy &[u8] is only supported in argument position, not nested in records/options/etc."
+    end
+  end
+
+  # Zero-copy converter for `&mut [u8]` / `[ByMutRef] bytes` arguments.
+  #
+  # Only `lower` and `check_lower` are valid — zero-copy byte buffers only
+  # flow foreign -> Rust, and only in argument position. Rust writes land
+  # directly in the caller's String.
+  #
+  # A writable buffer is required: an unfrozen String qualifies. Do not
+  # `to_str` (that would copy and hide writes). `setbyte` unshares a COW
+  # buffer so writes cannot corrupt a sibling string.
+  module FfiConverterByMutRefBytes
+    def self.check_lower(value)
+      unless value.is_a?(String)
+        raise TypeError, "a String object is required, not #{value.class}"
+      end
+      if value.frozen?
+        raise TypeError, "a mutable (unfrozen) String is required, not a frozen String"
+      end
+      value
+    end
+
+    def self.lower(value)
+      # Unshare before taking the pointer: `setbyte` calls `rb_str_modify`.
+      value.setbyte(0, value.getbyte(0)) unless value.bytesize.zero?
+      ForeignBytes.from_ruby_string(value)
+    end
+
+    def self.lift(_value)
+      raise InternalError, "ByMutRef bytes cannot be lifted: zero-copy &mut [u8] only flows foreign->Rust"
+    end
+
+    def self.read(_buf)
+      raise InternalError, "ByMutRef bytes cannot be read from a buffer: zero-copy &mut [u8] is only supported in argument position, not nested in records/options/etc."
+    end
+
+    def self.write(_value, _buf)
+      raise InternalError, "ByMutRef bytes cannot be written to a buffer: zero-copy &mut [u8] is only supported in argument position, not nested in records/options/etc."
     end
   end
 end

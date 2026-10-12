@@ -101,5 +101,4 @@ Each binding maps a mutable argument to a writable type:
 | Kotlin  | direct `java.nio.ByteBuffer` | The same direct buffer as `[ByRef]`; writes land in it. |
 | Swift   | `inout Data`                 | The call runs inside `Data.withUnsafeMutableBytes`. |
 | Python  | `bytearray`                  | `bytes` can't be used as a mutable argument.        |
-
-Ruby doesn't support `&mut [u8]`.
+| Ruby    | unfrozen `String`            | Frozen strings are rejected. Writes land in the caller's buffer. |

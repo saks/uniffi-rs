@@ -743,3 +743,63 @@ fn enum_lift_consume_into_matches_method_name() {
         "heck-rewritten consume_into must not appear:\n{src}"
     );
 }
+
+fn method_body<'a>(src: &'a str, sig: &str) -> &'a str {
+    let rest = src
+        .split(sig)
+        .nth(1)
+        .unwrap_or_else(|| panic!("missing `{sig}` in generated source:\n{src}"));
+    rest.split("\nend").next().unwrap()
+}
+
+#[test]
+fn borrowed_bytes_use_foreignbytes_not_rustbuffer() {
+    let ci = ComponentInterface::from_webidl(
+        r#"
+        namespace test {
+            bytes roundtrip(bytes a);
+            u32 sum_bytes([ByRef] bytes buf);
+            void fill_bytes([ByMutRef] bytes buf);
+        };
+        "#,
+        "test",
+    )
+    .unwrap();
+    let src = generate_ruby_bindings(&Config::default(), &ci).unwrap();
+
+    assert!(src.contains("ForeignBytes.by_value"), "{src}");
+    assert!(
+        !src.contains("[ForeignBytes,") && !src.contains("[ForeignBytes]"),
+        "ForeignBytes must be passed by value:\n{src}"
+    );
+
+    let roundtrip = method_body(&src, "def self.roundtrip(");
+    assert!(
+        roundtrip.contains("RustBuffer.alloc_from_bytes"),
+        "owned bytes still copy through RustBuffer:\n{roundtrip}"
+    );
+    assert!(!roundtrip.contains("FfiConverterByRefBytes"), "{roundtrip}");
+
+    let sum = method_body(&src, "def self.sum_bytes(");
+    assert!(
+        sum.contains("UniFFILib::FfiConverterByRefBytes.check_lower"),
+        "{sum}"
+    );
+    assert!(
+        sum.contains("UniFFILib::FfiConverterByRefBytes.lower"),
+        "{sum}"
+    );
+    assert!(!sum.contains("alloc_from_bytes"), "{sum}");
+    assert!(!sum.contains("FfiConverterByMutRefBytes"), "{sum}");
+
+    let fill = method_body(&src, "def self.fill_bytes(");
+    assert!(
+        fill.contains("UniFFILib::FfiConverterByMutRefBytes.check_lower"),
+        "{fill}"
+    );
+    assert!(
+        fill.contains("UniFFILib::FfiConverterByMutRefBytes.lower"),
+        "{fill}"
+    );
+    assert!(!fill.contains("alloc_from_bytes"), "{fill}");
+}

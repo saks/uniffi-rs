@@ -62,7 +62,13 @@ values[{{- field_num - 1 -}}]
 
 {%- macro _arg_list_ffi_call(func) %}
     {%- for arg in func.arguments() %}
-        {{- self.lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
+        {%- if arg|is_borrowed_bytes_mut -%}
+        UniFFILib::FfiConverterByMutRefBytes.lower({{ arg.name()|var_name_rb }})
+        {%- else if arg|is_borrowed_bytes -%}
+        UniFFILib::FfiConverterByRefBytes.lower({{ arg.name()|var_name_rb }})
+        {%- else -%}
+        {{ self.lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
+        {%- endif -%}
         {%- if !loop.last %},{% endif %}
     {%- endfor %}
 {%- endmacro -%}
@@ -133,15 +139,27 @@ values[{{- field_num - 1 -}}]
 
 {%- macro setup_args(func) %}
     {%- for arg in func.arguments() %}
+    {%- if arg|is_borrowed_bytes_mut %}
+    {{ arg.name()|var_name_rb }} = UniFFILib::FfiConverterByMutRefBytes.check_lower({{ arg.name()|var_name_rb }})
+    {%- else if arg|is_borrowed_bytes %}
+    {{ arg.name()|var_name_rb }} = UniFFILib::FfiConverterByRefBytes.check_lower({{ arg.name()|var_name_rb }})
+    {%- else %}
     {{ arg.name()|var_name_rb }} = {{ self.coerce_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
     {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
+    {%- endif %}
     {% endfor -%}
 {%- endmacro -%}
 
 {%- macro setup_args_extra_indent(meth) %}
         {%- for arg in meth.arguments() %}
+        {%- if arg|is_borrowed_bytes_mut %}
+        {{ arg.name()|var_name_rb }} = UniFFILib::FfiConverterByMutRefBytes.check_lower({{ arg.name()|var_name_rb }})
+        {%- else if arg|is_borrowed_bytes %}
+        {{ arg.name()|var_name_rb }} = UniFFILib::FfiConverterByRefBytes.check_lower({{ arg.name()|var_name_rb }})
+        {%- else %}
         {{ arg.name()|var_name_rb }} = {{ self.coerce_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
         {{ self.check_lower_rb(arg.name()|var_name_rb, arg.as_type().borrow())? }}
+        {%- endif %}
         {%- endfor %}
 {%- endmacro -%}
 

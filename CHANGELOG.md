@@ -22,6 +22,9 @@
   `[bindings.ruby.external_packages]` is auto-filled from each peer's `module_name`; a consumer
   override that does not match is a bindgen error (via [#2980](https://github.com/mozilla/uniffi-rs/pull/2980)).
 - Ruby: Add external types support (via [#2980](https://github.com/mozilla/uniffi-rs/pull/2980)).
+- Ruby: zero-copy `&[u8]` / `[ByRef] bytes` and `&mut [u8]` / `[ByMutRef] bytes` arguments.
+  A BINARY `String` is borrowed as `ForeignBytes` for the duration of the call (no `RustBuffer` copy).
+  `&mut [u8]` requires an unfrozen `String`; writes land in place.
 
 ### What's Fixed
 - Recursive enums and records are now detected when the cycle passes through a custom type.

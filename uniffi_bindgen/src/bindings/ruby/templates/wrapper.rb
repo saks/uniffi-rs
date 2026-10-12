@@ -14,6 +14,7 @@
 # helpers directly inline like we're doing here.
 
 require 'ffi'
+require 'fiddle'
 require 'set'
 
 {%- if ci.has_callback_definitions() || ci.has_async_fns() %}

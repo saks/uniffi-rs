@@ -582,6 +582,24 @@ mod filters {
         }
     }
 
+    /// True for zero-copy `&[u8]` / `[ByRef] bytes` and `&mut [u8]` / `[ByMutRef] bytes`.
+    #[askama::filter_fn]
+    pub fn is_borrowed_bytes(
+        arg: &Argument,
+        _: &dyn askama::Values,
+    ) -> Result<bool, askama::Error> {
+        Ok(arg.is_borrowed_bytes())
+    }
+
+    /// True for zero-copy `&mut [u8]` / `[ByMutRef] bytes`.
+    #[askama::filter_fn]
+    pub fn is_borrowed_bytes_mut(
+        arg: &Argument,
+        _: &dyn askama::Values,
+    ) -> Result<bool, askama::Error> {
+        Ok(arg.is_borrowed_bytes_mut())
+    }
+
     #[askama::filter_fn]
     pub fn type_ffi(type_: &FfiType, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(match type_ {
@@ -598,7 +616,9 @@ mod filters {
             FfiType::Handle => ":uint64".to_string(),
             FfiType::RustBuffer(_) => "RustBuffer.by_value".to_string(),
             FfiType::RustCallStatus => "RustCallStatus".to_string(),
-            FfiType::ForeignBytes => "ForeignBytes".to_string(),
+            // ruby-ffi passes structs by reference unless `.by_value` is used.
+            // Matches Kotlin `ForeignBytes.ByValue` and Ruby's `RustBuffer.by_value`.
+            FfiType::ForeignBytes => "ForeignBytes.by_value".to_string(),
             FfiType::Callback(name) => format!(":{name}"),
             FfiType::Reference(inner) | FfiType::MutReference(inner) => match inner.as_ref() {
                 FfiType::Struct(name) => format!("{name}.by_ref"),
